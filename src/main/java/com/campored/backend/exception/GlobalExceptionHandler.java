@@ -37,6 +37,12 @@ public class GlobalExceptionHandler {
         return construir(HttpStatus.CONFLICT, "El recurso ya existe o entra en conflicto con otro", request, null);
     }
 
+    @ExceptionHandler(CredencialesInvalidasException.class)
+    public ResponseEntity<ErrorResponse> handleCredencialesInvalidas(CredencialesInvalidasException ex,
+                                                                     HttpServletRequest request) {
+        return construir(HttpStatus.UNAUTHORIZED, ex.getMessage(), request, null);
+    }
+
     @ExceptionHandler(InvalidInputException.class)
     public ResponseEntity<ErrorResponse> handleInvalidInput(InvalidInputException ex, HttpServletRequest request) {
         return construir(HttpStatus.BAD_REQUEST, ex.getMessage(), request, null);

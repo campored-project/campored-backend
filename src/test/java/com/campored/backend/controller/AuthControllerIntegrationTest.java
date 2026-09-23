@@ -1,5 +1,6 @@
 package com.campored.backend.controller;
 
+import com.campored.backend.dto.LoginRequest;
 import com.campored.backend.dto.RegistroProductorRequest;
 import com.campored.backend.entity.Municipio;
 import com.campored.backend.entity.Usuario;
@@ -33,10 +34,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Transactional
-@DisplayName("AuthController - POST /api/auth/registro/productor")
+@DisplayName("AuthController - /api/auth")
 class AuthControllerIntegrationTest {
 
     private static final String URL_REGISTRO = "/api/auth/registro/productor";
+    private static final String URL_LOGIN = "/api/auth/login";
 
     @Autowired
     private MockMvc mockMvc;
@@ -182,5 +184,52 @@ class AuthControllerIntegrationTest {
         mockMvc.perform(get("/api/productos")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("Debe iniciar sesión y devolver 200 con JWT")
+    void testLoginExitoso() throws Exception {
+        assertEquals(201, registrar(request).getResponse().getStatus());
+        LoginRequest login = new LoginRequest("MARIA@finca.com", "SecurePass123");
+
+        mockMvc.perform(post(URL_LOGIN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(login)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token", notNullValue()))
+                .andExpect(jsonPath("$.tipo").value("Bearer"))
+                .andExpect(jsonPath("$.expiraEnMs").value(3600000))
+                .andExpect(jsonPath("$.usuario.correo").value("maria@finca.com"))
+                .andExpect(jsonPath("$.usuario.rol").value("PRODUCTOR"))
+                .andExpect(jsonPath("$.usuario.contrasenaHash").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("Debe devolver 401 con el mismo mensaje si la contraseña o el correo son incorrectos")
+    void testLoginCredencialesInvalidas() throws Exception {
+        assertEquals(201, registrar(request).getResponse().getStatus());
+
+        mockMvc.perform(post(URL_LOGIN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new LoginRequest("maria@finca.com", "OtraClave123"))))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.mensaje").value("Credenciales inválidas"))
+                .andExpect(jsonPath("$.token").doesNotExist());
+
+        mockMvc.perform(post(URL_LOGIN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new LoginRequest("nadie@finca.com", "SecurePass123"))))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.mensaje").value("Credenciales inválidas"));
+    }
+
+    @Test
+    @DisplayName("Debe devolver 400 si el correo está vacío")
+    void testLoginCorreoVacio() throws Exception {
+        mockMvc.perform(post(URL_LOGIN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new LoginRequest("", "SecurePass123"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errores.correo").value("El correo es obligatorio"));
     }
 }
