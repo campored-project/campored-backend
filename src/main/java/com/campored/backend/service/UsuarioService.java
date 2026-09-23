@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Locale;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -56,6 +57,11 @@ public class UsuarioService {
         Usuario guardado = usuarioRepository.save(usuario);
         log.info("Productor registrado: {}", guardado.getId());
         return guardado;
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<Usuario> buscarPorCorreo(String correo) {
+        return usuarioRepository.findByCorreo(normalizarCorreo(correo));
     }
 
     private Finca crearFinca(RegistroProductorRequest request, Municipio municipio) {
