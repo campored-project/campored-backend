@@ -14,7 +14,7 @@ target/
 .sts4-cache
 
 ### IntelliJ IDEA ###
-.idea
+.idea/
 *.iws
 *.iml
 *.ipr
@@ -32,20 +32,12 @@ build/
 ### VS Code ###
 .vscode/
 
-# IDE
-.vscode/
-.idea/
-*.iml
-
-# Maven
-/target/
-*.jar
-
-# Environment
+### Environment ###
+.env
 .env.local
 .env.*.local
 application-local.properties
+**/application-local.properties
 
-# Claude Code (local rules only - DO NOT COMMIT)
+### Claude Code (reglas locales) ###
 CLAUDE.md
-/CLAUDE.md
