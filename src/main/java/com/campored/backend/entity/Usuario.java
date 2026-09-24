@@ -10,6 +10,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OneToOne;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -39,7 +41,8 @@ public class Usuario {
     @Column(name = "contrasena_hash", nullable = false, length = 100)
     private String contrasenaHash;
 
-    @Column(nullable = false, length = 20)
+    // Opcional para compradores; la obligatoriedad para productores se valida en RegistroProductorRequest
+    @Column(length = 20)
     private String telefono;
 
     @Column(length = 20)
@@ -53,12 +56,40 @@ public class Usuario {
     @JoinColumn(name = "finca_id", unique = true)
     private Finca finca;
 
+    @OneToOne(mappedBy = "usuario", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Negocio negocio;
+
     @CreationTimestamp
     @Column(name = "fecha_registro", nullable = false, updatable = false)
     private LocalDateTime fechaRegistro;
 
     public void asignarFinca(Finca finca) {
+        if (negocio != null) {
+            throw new IllegalStateException("Un usuario con negocio no puede tener finca");
+        }
         this.finca = finca;
         finca.setProductor(this);
+    }
+
+    // ============================================================
+    // FEATURE: US-03 — Registro de Comprador Comercial (Sprint 1)
+    // Autor: Cristian Diez
+    // Fecha: 2026-09-23
+    // Descripción: Registro de negocios compradores con JWT
+    // ============================================================
+    public void asignarNegocio(Negocio negocio) {
+        if (finca != null) {
+            throw new IllegalStateException("Un usuario con finca no puede tener negocio");
+        }
+        this.negocio = negocio;
+        negocio.setUsuario(this);
+    }
+
+    @PrePersist
+    @PreUpdate
+    void validarPerfilUnico() {
+        if (finca != null && negocio != null) {
+            throw new IllegalStateException("Un usuario no puede tener finca y negocio a la vez");
+        }
     }
 }

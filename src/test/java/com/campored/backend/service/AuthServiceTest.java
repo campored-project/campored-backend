@@ -2,7 +2,11 @@ package com.campored.backend.service;
 
 import com.campored.backend.dto.AuthResponse;
 import com.campored.backend.dto.LoginRequest;
+import com.campored.backend.dto.RegistroCompradorRequest;
+import com.campored.backend.entity.Municipio;
+import com.campored.backend.entity.Negocio;
 import com.campored.backend.entity.Rol;
+import com.campored.backend.entity.TipoNegocio;
 import com.campored.backend.entity.Usuario;
 import com.campored.backend.exception.CredencialesInvalidasException;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,13 +20,14 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-@DisplayName("AuthService - Login de Productor")
+@DisplayName("AuthService - Login y registro de comprador")
 class AuthServiceTest {
 
     private static final String HASH_FICTICIO = "hash_ficticio";
@@ -99,5 +104,45 @@ class AuthServiceTest {
 
         assertEquals("Credenciales inválidas", ex.getMessage());
         verify(jwtService, never()).generarToken(any());
+    }
+
+    @Test
+    @DisplayName("Debe registrar al comprador y devolver el JWT con los datos del negocio")
+    void testRegistrarComprador() {
+        RegistroCompradorRequest request = RegistroCompradorRequest.builder()
+                .correo("compras@elfogon.com")
+                .contrasena("SecurePass123")
+                .nombre("Laura Restrepo")
+                .nombreNegocio("Restaurante El Fogón")
+                .tipoNegocio("RESTAURANTE")
+                .direccion("Calle 49 # 50-21")
+                .municipio("RIONEGRO")
+                .build();
+
+        Usuario comprador = new Usuario();
+        comprador.setId(UUID.randomUUID());
+        comprador.setCorreo("compras@elfogon.com");
+        comprador.setRol(Rol.COMPRADOR);
+        Negocio negocio = new Negocio();
+        negocio.setNombreNegocio("Restaurante El Fogón");
+        negocio.setTipoNegocio(TipoNegocio.RESTAURANTE);
+        negocio.setDireccion("Calle 49 # 50-21");
+        negocio.setMunicipio(Municipio.RIONEGRO);
+        comprador.asignarNegocio(negocio);
+
+        when(usuarioService.registrarComprador(request)).thenReturn(comprador);
+        when(jwtService.generarToken(comprador)).thenReturn("jwt.token.comprador");
+        when(jwtService.getExpiracionMs()).thenReturn(3600000L);
+
+        AuthResponse respuesta = authService.registrarComprador(request);
+
+        assertEquals("jwt.token.comprador", respuesta.getToken());
+        assertEquals(3600000L, respuesta.getExpiraEnMs());
+        assertEquals(Rol.COMPRADOR, respuesta.getUsuario().getRol());
+        assertEquals("Restaurante El Fogón", respuesta.getUsuario().getNombreNegocio());
+        assertEquals(TipoNegocio.RESTAURANTE, respuesta.getUsuario().getTipoNegocio());
+        assertEquals("Calle 49 # 50-21", respuesta.getUsuario().getDireccion());
+        assertEquals(Municipio.RIONEGRO, respuesta.getUsuario().getMunicipio());
+        assertNull(respuesta.getUsuario().getNombreFinca());
     }
 }

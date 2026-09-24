@@ -2,6 +2,7 @@ package com.campored.backend.util;
 
 import com.campored.backend.dto.UsuarioResponse;
 import com.campored.backend.entity.Finca;
+import com.campored.backend.entity.Negocio;
 import com.campored.backend.entity.Usuario;
 
 public final class UsuarioMapper {
@@ -24,6 +25,16 @@ public final class UsuarioMapper {
             builder.nombreFinca(finca.getNombreFinca())
                     .municipio(finca.getMunicipio())
                     .vereda(finca.getVereda());
+        }
+
+        Negocio negocio = usuario.getNegocio();
+        if (negocio != null) {
+            builder.nombreNegocio(negocio.getNombreNegocio())
+                    .tipoNegocio(negocio.getTipoNegocio())
+                    .direccion(negocio.getDireccion())
+                    .municipio(negocio.getMunicipio())
+                    .horarioRecepcion(negocio.getHorarioRecepcion())
+                    .notasAcceso(negocio.getNotasAcceso());
         }
         return builder.build();
     }
