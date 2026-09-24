@@ -1,13 +1,19 @@
 package com.campored.backend.service;
 
+import com.campored.backend.dto.ActualizarPerfilCompradorRequest;
+import com.campored.backend.dto.ActualizarPerfilProductorRequest;
 import com.campored.backend.dto.RegistroCompradorRequest;
 import com.campored.backend.dto.RegistroProductorRequest;
+import com.campored.backend.dto.UsuarioResponse;
+import com.campored.backend.entity.Finca;
 import com.campored.backend.entity.Municipio;
+import com.campored.backend.entity.Negocio;
 import com.campored.backend.entity.Rol;
 import com.campored.backend.entity.TipoNegocio;
 import com.campored.backend.entity.Usuario;
 import com.campored.backend.exception.InvalidInputException;
 import com.campored.backend.exception.ResourceAlreadyExistsException;
+import com.campored.backend.exception.ResourceNotFoundException;
 import com.campored.backend.repository.UsuarioRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -18,9 +24,11 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -32,7 +40,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-@DisplayName("UsuarioService - Registro de Productor y Comprador")
+@DisplayName("UsuarioService - Registro y perfil de Productor y Comprador")
 class UsuarioServiceTest {
 
     @Mock
@@ -281,5 +289,198 @@ class UsuarioServiceTest {
         assertNull(guardado.getNegocio().getHorarioRecepcion());
         assertNull(guardado.getNegocio().getNotasAcceso());
         assertNull(guardado.getTelefono());
+    }
+
+    private Usuario productorGuardado() {
+        Usuario productor = new Usuario();
+        productor.setId(UUID.randomUUID());
+        productor.setNombre("Juan Pérez");
+        productor.setCorreo("juan@finca.com");
+        productor.setRol(Rol.PRODUCTOR);
+        productor.setTelefono("+573001234567");
+        Finca finca = new Finca();
+        finca.setNombreFinca("Finca La Esperanza");
+        finca.setMunicipio(Municipio.SONSON);
+        finca.setVereda("El Sauce");
+        productor.asignarFinca(finca);
+        return productor;
+    }
+
+    private Usuario compradorGuardado() {
+        Usuario comprador = new Usuario();
+        comprador.setId(UUID.randomUUID());
+        comprador.setNombre("Laura Restrepo");
+        comprador.setCorreo("compras@elfogon.com");
+        comprador.setRol(Rol.COMPRADOR);
+        Negocio negocio = new Negocio();
+        negocio.setNombreNegocio("Restaurante El Fogón");
+        negocio.setTipoNegocio(TipoNegocio.RESTAURANTE);
+        negocio.setDireccion("Calle 49 # 50-21");
+        negocio.setMunicipio(Municipio.RIONEGRO);
+        negocio.setNotasAcceso("Entrada de proveedores por la parte trasera");
+        comprador.asignarNegocio(negocio);
+        return comprador;
+    }
+
+    private void simularBusqueda(Usuario usuario) {
+        when(usuarioRepository.findById(usuario.getId())).thenReturn(Optional.of(usuario));
+        when(usuarioRepository.save(any(Usuario.class))).thenAnswer(invocacion -> invocacion.getArgument(0));
+    }
+
+    @Test
+    @DisplayName("Debe actualizar los números y canales de contacto del productor")
+    void testActualizarPerfilProductorExitoso() {
+        Usuario productor = productorGuardado();
+        simularBusqueda(productor);
+        ActualizarPerfilProductorRequest request = ActualizarPerfilProductorRequest.builder()
+                .telefono("+573109998877")
+                .whatsapp("+573105556644")
+                .canalLlamadaHabilitado(true)
+                .canalWhatsappHabilitado(true)
+                .build();
+
+        UsuarioResponse respuesta = usuarioService.actualizarPerfilProductor(productor.getId(), request);
+
+        assertEquals("+573109998877", respuesta.getTelefono());
+        assertEquals("+573105556644", respuesta.getWhatsapp());
+        assertTrue(respuesta.isCanalLlamadaHabilitado());
+        assertTrue(respuesta.isCanalWhatsappHabilitado());
+        assertEquals("Finca La Esperanza", respuesta.getNombreFinca());
+        verify(usuarioRepository, times(1)).save(productor);
+    }
+
+    @Test
+    @DisplayName("Debe conservar los campos que no se envían en la actualización del productor")
+    void testActualizarPerfilProductorParcial() {
+        Usuario productor = productorGuardado();
+        simularBusqueda(productor);
+        ActualizarPerfilProductorRequest request = ActualizarPerfilProductorRequest.builder()
+                .canalLlamadaHabilitado(true)
+                .build();
+
+        UsuarioResponse respuesta = usuarioService.actualizarPerfilProductor(productor.getId(), request);
+
+        assertEquals("+573001234567", respuesta.getTelefono());
+        assertNull(respuesta.getWhatsapp());
+        assertTrue(respuesta.isCanalLlamadaHabilitado());
+        assertFalse(respuesta.isCanalWhatsappHabilitado());
+    }
+
+    @Test
+    @DisplayName("Debe rechazar habilitar el canal de llamadas sin teléfono")
+    void testActualizarCanalLlamadaSinTelefono() {
+        Usuario productor = productorGuardado();
+        simularBusqueda(productor);
+        ActualizarPerfilProductorRequest request = ActualizarPerfilProductorRequest.builder()
+                .telefono("")
+                .canalLlamadaHabilitado(true)
+                .build();
+
+        InvalidInputException ex = assertThrows(InvalidInputException.class,
+                () -> usuarioService.actualizarPerfilProductor(productor.getId(), request));
+
+        assertEquals(ActualizarPerfilProductorRequest.MENSAJE_TELEFONO_REQUERIDO, ex.getMessage());
+        verify(usuarioRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Debe rechazar habilitar el canal de WhatsApp sin número de WhatsApp")
+    void testActualizarCanalWhatsappSinWhatsapp() {
+        Usuario productor = productorGuardado();
+        simularBusqueda(productor);
+        ActualizarPerfilProductorRequest request = ActualizarPerfilProductorRequest.builder()
+                .canalWhatsappHabilitado(true)
+                .build();
+
+        InvalidInputException ex = assertThrows(InvalidInputException.class,
+                () -> usuarioService.actualizarPerfilProductor(productor.getId(), request));
+
+        assertEquals(ActualizarPerfilProductorRequest.MENSAJE_WHATSAPP_REQUERIDO, ex.getMessage());
+        verify(usuarioRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Debe lanzar ResourceNotFoundException si el usuario del token no existe")
+    void testActualizarPerfilUsuarioInexistente() {
+        UUID usuarioId = UUID.randomUUID();
+        when(usuarioRepository.findById(usuarioId)).thenReturn(Optional.empty());
+        ActualizarPerfilProductorRequest request = new ActualizarPerfilProductorRequest();
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> usuarioService.actualizarPerfilProductor(usuarioId, request));
+        verify(usuarioRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("No debe actualizar el perfil de comprador de un usuario con otro rol")
+    void testActualizarPerfilCompradorConRolDistinto() {
+        Usuario productor = productorGuardado();
+        simularBusqueda(productor);
+        ActualizarPerfilCompradorRequest request = ActualizarPerfilCompradorRequest.builder()
+                .direccion("Carrera 50 # 45-10")
+                .build();
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> usuarioService.actualizarPerfilComprador(productor.getId(), request));
+        verify(usuarioRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Debe actualizar los datos de entrega y contacto del comprador")
+    void testActualizarPerfilCompradorExitoso() {
+        Usuario comprador = compradorGuardado();
+        simularBusqueda(comprador);
+        ActualizarPerfilCompradorRequest request = ActualizarPerfilCompradorRequest.builder()
+                .direccion("  Carrera 50 # 45-10, local 2 ")
+                .municipio("La Ceja")
+                .horarioRecepcion("Lunes a viernes, 5:00 a 9:00 a. m.")
+                .notasAcceso("")
+                .telefono("+573009876543")
+                .whatsapp("+573009876543")
+                .build();
+
+        UsuarioResponse respuesta = usuarioService.actualizarPerfilComprador(comprador.getId(), request);
+
+        assertEquals("Carrera 50 # 45-10, local 2", respuesta.getDireccion());
+        assertEquals(Municipio.LA_CEJA, respuesta.getMunicipio());
+        assertEquals("Lunes a viernes, 5:00 a 9:00 a. m.", respuesta.getHorarioRecepcion());
+        assertNull(respuesta.getNotasAcceso());
+        assertEquals("+573009876543", respuesta.getTelefono());
+        assertEquals("+573009876543", respuesta.getWhatsapp());
+        assertEquals("Restaurante El Fogón", respuesta.getNombreNegocio());
+        assertEquals(TipoNegocio.RESTAURANTE, respuesta.getTipoNegocio());
+        verify(usuarioRepository, times(1)).save(comprador);
+    }
+
+    @Test
+    @DisplayName("Debe rechazar dejar vacía la dirección del comprador")
+    void testActualizarPerfilCompradorDireccionVacia() {
+        Usuario comprador = compradorGuardado();
+        simularBusqueda(comprador);
+        ActualizarPerfilCompradorRequest request = ActualizarPerfilCompradorRequest.builder()
+                .direccion("   ")
+                .build();
+
+        InvalidInputException ex = assertThrows(InvalidInputException.class,
+                () -> usuarioService.actualizarPerfilComprador(comprador.getId(), request));
+
+        assertEquals(ActualizarPerfilCompradorRequest.MENSAJE_DIRECCION_VACIA, ex.getMessage());
+        verify(usuarioRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Debe rechazar un municipio no soportado al actualizar el perfil del comprador")
+    void testActualizarPerfilCompradorMunicipioInvalido() {
+        Usuario comprador = compradorGuardado();
+        simularBusqueda(comprador);
+        ActualizarPerfilCompradorRequest request = ActualizarPerfilCompradorRequest.builder()
+                .municipio("Cali")
+                .build();
+
+        InvalidInputException ex = assertThrows(InvalidInputException.class,
+                () -> usuarioService.actualizarPerfilComprador(comprador.getId(), request));
+
+        assertTrue(ex.getMessage().contains("Cali"));
+        verify(usuarioRepository, never()).save(any());
     }
 }

@@ -16,6 +16,7 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.ColumnDefault;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;
@@ -47,6 +48,20 @@ public class Usuario {
 
     @Column(length = 20)
     private String whatsapp;
+
+    // ============================================================
+    // FEATURE: US-04 — Gestión de Perfil del Productor (Sprint 1)
+    // Autor: Cristian Diez
+    // Fecha: 2026-09-23
+    // Descripción: Canales por los que el productor acepta ser contactado
+    // ============================================================
+    @ColumnDefault("false")
+    @Column(name = "canal_whatsapp_habilitado", nullable = false)
+    private boolean canalWhatsappHabilitado;
+
+    @ColumnDefault("false")
+    @Column(name = "canal_llamada_habilitado", nullable = false)
+    private boolean canalLlamadaHabilitado;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
