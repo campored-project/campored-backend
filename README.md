@@ -28,7 +28,7 @@
 
 CampoRed conecta pequeños productores agrícolas de **Sonsón** y **San Carlos** (Antioquia) con compradores comerciales (restaurantes, tiendas y mayoristas) del Oriente Antioqueño y el Área Metropolitana de Medellín, eliminando intermediarios en la cadena de distribución local.
 
-Este repositorio contiene el backend del MVP: una API REST modular construida con Spring Boot 3 sobre PostgreSQL, con autenticación JWT, control de acceso por roles (PRODUCTOR / COMPRADOR) y cobertura de tests del **96.4 %** de líneas.
+Este repositorio contiene el backend del MVP: una API REST modular construida con Spring Boot 3 sobre PostgreSQL, con autenticación JWT, control de acceso por roles (PRODUCTOR / COMPRADOR) y cobertura de tests del **96.5 %** de líneas.
 
 **Producción:**
 - **API:** `https://campored-backend-production.up.railway.app/api`
@@ -118,9 +118,20 @@ spring.profiles.active=local
 | `SPRING_DATASOURCE_PASSWORD` | Contraseña de la BD | `***` |
 | `JWT_SECRET` | Clave para firmar tokens (mínimo 256 bits) | `your-super-secret-key...` |
 | `JWT_EXPIRATION` | Duración del token en ms (por defecto 24 h) | `86400000` |
+| `CORS_ALLOWED_ORIGINS` | Orígenes permitidos para CORS, separados por coma (por defecto `http://localhost:5173`) | `http://localhost:5173,https://frontend.example.com` |
 | `SPRING_PROFILES_ACTIVE` | Perfil activo | `local` / `prod` |
 
 En producción (Railway) estas variables se configuran como variables de entorno del servicio. **Nunca se suben al repositorio.**
+
+### CORS
+
+- Origen permitido: `http://localhost:5173` (frontend Vite dev)
+- Para producción: agregar la URL del frontend en la variable de entorno `CORS_ALLOWED_ORIGINS`
+- Métodos: GET, POST, PUT, PATCH, DELETE, OPTIONS
+- Credenciales: habilitadas
+- Ruta: `/api/**` — Swagger UI no lo necesita porque se sirve desde el mismo origen
+
+> **Nota:** `CORS_ALLOWED_ORIGINS` **reemplaza** el valor por defecto. Para seguir desarrollando con Vite contra Railway, incluye también `http://localhost:5173` en la lista. No uses `*`: es incompatible con credenciales habilitadas.
 
 ---
 
@@ -173,7 +184,7 @@ src/
 │
 └── test/
     └── java/com/campored/backend/
-        ├── config/             # SecurityIntegrationTest
+        ├── config/             # SecurityIntegrationTest, CorsIntegrationTest
         ├── controller/         # UsuarioControllerIntegrationTest
         └── service/            # UsuarioServiceTest, JwtServiceTest
 ```
@@ -418,9 +429,9 @@ Request
 
 | Métrica | Valor |
 |---|---|
-| Total de tests | **78** |
-| Resultado | 78 / 0 — BUILD SUCCESS |
-| Cobertura de líneas | **96.4 %** |
+| Total de tests | **81** |
+| Resultado | 81 / 0 — BUILD SUCCESS |
+| Cobertura de líneas | **96.5 %** |
 | Cobertura service | 100 % |
 | Cobertura controller | 100 % |
 | Cobertura config / util | 100 % |
@@ -438,6 +449,7 @@ Request
 - `JwtServiceTest` — generación del token, claims (`sub`, `uid`, `rol`), expiración 24 h, BCrypt costo >= 10
 - `UsuarioControllerIntegrationTest` — flujo HTTP completo de perfiles PATCH, control por rol
 - `SecurityIntegrationTest` — 401 sin token, token mal formado, esquema Basic, firma incorrecta, token expirado; 403 por rol incorrecto
+- `CorsIntegrationTest` — preflight desde el frontend, origen no permitido rechazado (403), cabeceras CORS en respuestas 401
 
 ---
 
