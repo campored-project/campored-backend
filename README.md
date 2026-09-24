@@ -118,20 +118,22 @@ spring.profiles.active=local
 | `SPRING_DATASOURCE_PASSWORD` | Contraseña de la BD | `***` |
 | `JWT_SECRET` | Clave para firmar tokens (mínimo 256 bits) | `your-super-secret-key...` |
 | `JWT_EXPIRATION` | Duración del token en ms (por defecto 24 h) | `86400000` |
-| `CORS_ALLOWED_ORIGINS` | Orígenes permitidos para CORS, separados por coma (por defecto `http://localhost:5173`) | `http://localhost:5173,https://frontend.example.com` |
+| `CORS_ALLOWED_ORIGINS` | Orígenes permitidos para CORS, separados por coma (por defecto `http://localhost:5173` y `https://campored-frontend.vercel.app`) | `http://localhost:5173,https://campored-frontend.vercel.app` |
 | `SPRING_PROFILES_ACTIVE` | Perfil activo | `local` / `prod` |
 
 En producción (Railway) estas variables se configuran como variables de entorno del servicio. **Nunca se suben al repositorio.**
 
 ### CORS
 
-- Origen permitido: `http://localhost:5173` (frontend Vite dev)
-- Para producción: agregar la URL del frontend en la variable de entorno `CORS_ALLOWED_ORIGINS`
+- Orígenes permitidos:
+  - `http://localhost:5173` (frontend Vite dev)
+  - `https://campored-frontend.vercel.app` (frontend en producción, Vercel)
+- Para otros orígenes: definirlos en la variable de entorno `CORS_ALLOWED_ORIGINS`
 - Métodos: GET, POST, PUT, PATCH, DELETE, OPTIONS
 - Credenciales: habilitadas
 - Ruta: `/api/**` — Swagger UI no lo necesita porque se sirve desde el mismo origen
 
-> **Nota:** `CORS_ALLOWED_ORIGINS` **reemplaza** el valor por defecto. Para seguir desarrollando con Vite contra Railway, incluye también `http://localhost:5173` en la lista. No uses `*`: es incompatible con credenciales habilitadas.
+> **Nota:** `CORS_ALLOWED_ORIGINS` **reemplaza** el valor por defecto: si la defines, incluye también los dos orígenes anteriores. Escribe cada origen sin `/` final y no uses `*`, que es incompatible con credenciales habilitadas.
 
 ---
 
@@ -429,8 +431,8 @@ Request
 
 | Métrica | Valor |
 |---|---|
-| Total de tests | **81** |
-| Resultado | 81 / 0 — BUILD SUCCESS |
+| Total de tests | **82** |
+| Resultado | 82 / 0 — BUILD SUCCESS |
 | Cobertura de líneas | **96.5 %** |
 | Cobertura service | 100 % |
 | Cobertura controller | 100 % |
@@ -521,6 +523,7 @@ Fixes: #US-XX
 | Entorno | Plataforma | URL |
 |---|---|---|
 | Producción API | Railway | `https://campored-backend-production.up.railway.app` |
+| Producción frontend | Vercel | `https://campored-frontend.vercel.app` |
 | Base de datos | Supabase (us-east-2) | Session Pooler |
 
 ### Conexión a Supabase
