@@ -8,6 +8,7 @@ package com.campored.backend.service;
 
 import com.campored.backend.dto.AuthResponse;
 import com.campored.backend.dto.LoginRequest;
+import com.campored.backend.dto.RegistroCompradorRequest;
 import com.campored.backend.dto.RegistroProductorRequest;
 import com.campored.backend.entity.Usuario;
 import com.campored.backend.exception.CredencialesInvalidasException;
@@ -41,6 +42,17 @@ public class AuthService {
     public AuthResponse registrarProductor(RegistroProductorRequest request) {
         Usuario productor = usuarioService.registrarProductor(request);
         return construirRespuesta(productor);
+    }
+
+    // ============================================================
+    // FEATURE: US-03 — Registro de Comprador Comercial (Sprint 1)
+    // Autor: Cristian Diez
+    // Fecha: 2026-09-23
+    // Descripción: Registro de negocios compradores con JWT
+    // ============================================================
+    public AuthResponse registrarComprador(RegistroCompradorRequest request) {
+        Usuario comprador = usuarioService.registrarComprador(request);
+        return construirRespuesta(comprador);
     }
 
     // ============================================================

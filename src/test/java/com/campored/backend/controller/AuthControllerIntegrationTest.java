@@ -1,8 +1,11 @@
 package com.campored.backend.controller;
 
 import com.campored.backend.dto.LoginRequest;
+import com.campored.backend.dto.RegistroCompradorRequest;
 import com.campored.backend.dto.RegistroProductorRequest;
 import com.campored.backend.entity.Municipio;
+import com.campored.backend.entity.Rol;
+import com.campored.backend.entity.TipoNegocio;
 import com.campored.backend.entity.Usuario;
 import com.campored.backend.repository.UsuarioRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,6 +27,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -39,6 +43,7 @@ class AuthControllerIntegrationTest {
 
     private static final String URL_REGISTRO = "/api/auth/registro/productor";
     private static final String URL_LOGIN = "/api/auth/login";
+    private static final String URL_REGISTRO_COMPRADOR = "/api/auth/registro/comprador";
 
     @Autowired
     private MockMvc mockMvc;
@@ -231,5 +236,145 @@ class AuthControllerIntegrationTest {
                         .content(objectMapper.writeValueAsString(new LoginRequest("", "SecurePass123"))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errores.correo").value("El correo es obligatorio"));
+    }
+
+    private RegistroCompradorRequest compradorValido() {
+        return RegistroCompradorRequest.builder()
+                .correo("compras@elfogon.com")
+                .contrasena("SecurePass123")
+                .nombre("Laura Restrepo")
+                .nombreNegocio("Restaurante El Fogón")
+                .tipoNegocio("RESTAURANTE")
+                .direccion("Calle 49 # 50-21")
+                .municipio("RIONEGRO")
+                .horarioRecepcion("Lunes a sábado, 6:00 a 10:00 a. m.")
+                .notasAcceso("Entrada de proveedores por la parte trasera")
+                .build();
+    }
+
+    private MvcResult registrarComprador(RegistroCompradorRequest body) throws Exception {
+        return mockMvc.perform(post(URL_REGISTRO_COMPRADOR)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andReturn();
+    }
+
+    @Test
+    @DisplayName("Debe registrar al comprador y devolver 201 con JWT y datos del negocio")
+    void testRegistroCompradorExitoso() throws Exception {
+        mockMvc.perform(post(URL_REGISTRO_COMPRADOR)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(compradorValido())))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.token", notNullValue()))
+                .andExpect(jsonPath("$.tipo").value("Bearer"))
+                .andExpect(jsonPath("$.usuario.id", notNullValue()))
+                .andExpect(jsonPath("$.usuario.correo").value("compras@elfogon.com"))
+                .andExpect(jsonPath("$.usuario.rol").value("COMPRADOR"))
+                .andExpect(jsonPath("$.usuario.nombreNegocio").value("Restaurante El Fogón"))
+                .andExpect(jsonPath("$.usuario.tipoNegocio").value("RESTAURANTE"))
+                .andExpect(jsonPath("$.usuario.direccion").value("Calle 49 # 50-21"))
+                .andExpect(jsonPath("$.usuario.municipio").value("RIONEGRO"))
+                .andExpect(jsonPath("$.usuario.horarioRecepcion").value("Lunes a sábado, 6:00 a 10:00 a. m."))
+                .andExpect(jsonPath("$.usuario.nombreFinca").isEmpty())
+                .andExpect(jsonPath("$.usuario.contrasenaHash").doesNotExist());
+
+        Usuario guardado = usuarioRepository.findByCorreo("compras@elfogon.com").orElseThrow();
+        assertEquals(Rol.COMPRADOR, guardado.getRol());
+        assertTrue(passwordEncoder.matches("SecurePass123", guardado.getContrasenaHash()));
+        assertEquals(TipoNegocio.RESTAURANTE, guardado.getNegocio().getTipoNegocio());
+        assertNull(guardado.getFinca());
+    }
+
+    @Test
+    @DisplayName("Debe permitir al comprador iniciar sesión tras registrarse")
+    void testLoginComprador() throws Exception {
+        assertEquals(201, registrarComprador(compradorValido()).getResponse().getStatus());
+
+        mockMvc.perform(post(URL_LOGIN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new LoginRequest("compras@elfogon.com", "SecurePass123"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.usuario.rol").value("COMPRADOR"))
+                .andExpect(jsonPath("$.usuario.nombreNegocio").value("Restaurante El Fogón"));
+    }
+
+    @Test
+    @DisplayName("Debe devolver 409 si el correo del comprador ya está registrado")
+    void testRegistroCompradorCorreoDuplicado() throws Exception {
+        assertEquals(201, registrarComprador(compradorValido()).getResponse().getStatus());
+
+        RegistroCompradorRequest duplicado = compradorValido();
+        duplicado.setCorreo("COMPRAS@elfogon.com");
+        mockMvc.perform(post(URL_REGISTRO_COMPRADOR)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(duplicado)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.mensaje").value("Este correo ya está registrado"));
+    }
+
+    @Test
+    @DisplayName("Debe devolver 409 si el correo ya pertenece a un productor")
+    void testRegistroCompradorConCorreoDeProductor() throws Exception {
+        assertEquals(201, registrar(request).getResponse().getStatus());
+
+        RegistroCompradorRequest comprador = compradorValido();
+        comprador.setCorreo(request.getCorreo());
+        mockMvc.perform(post(URL_REGISTRO_COMPRADOR)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(comprador)))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    @DisplayName("Debe devolver 400 si el tipo de negocio no es válido")
+    void testRegistroCompradorTipoNegocioInvalido() throws Exception {
+        RegistroCompradorRequest invalido = compradorValido();
+        invalido.setTipoNegocio("FERRETERIA");
+
+        mockMvc.perform(post(URL_REGISTRO_COMPRADOR)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalido)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errores.tipoNegocio",
+                        containsString("RESTAURANTE, TIENDA, MINIMERCADO o MAYORISTA")));
+    }
+
+    @Test
+    @DisplayName("Debe devolver 400 si el municipio del comprador no está soportado")
+    void testRegistroCompradorMunicipioInvalido() throws Exception {
+        RegistroCompradorRequest invalido = compradorValido();
+        invalido.setMunicipio("Bogotá");
+
+        mockMvc.perform(post(URL_REGISTRO_COMPRADOR)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalido)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.mensaje", containsString("Municipio no soportado")));
+    }
+
+    @Test
+    @DisplayName("Debe devolver 400 con el detalle de cada campo obligatorio faltante")
+    void testRegistroCompradorCamposFaltantes() throws Exception {
+        RegistroCompradorRequest invalido = RegistroCompradorRequest.builder()
+                .correo("no-es-correo")
+                .contrasena("sinmayuscula1")
+                .nombre("L")
+                .telefono("123")
+                .build();
+
+        mockMvc.perform(post(URL_REGISTRO_COMPRADOR)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalido)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errores.correo", notNullValue()))
+                .andExpect(jsonPath("$.errores.contrasena", notNullValue()))
+                .andExpect(jsonPath("$.errores.nombre", notNullValue()))
+                .andExpect(jsonPath("$.errores.nombreNegocio").value("El nombre del negocio es obligatorio"))
+                .andExpect(jsonPath("$.errores.tipoNegocio", notNullValue()))
+                .andExpect(jsonPath("$.errores.direccion").value("La dirección es obligatoria"))
+                .andExpect(jsonPath("$.errores.municipio").value("El municipio es obligatorio"))
+                .andExpect(jsonPath("$.errores.telefono", notNullValue()));
     }
 }
