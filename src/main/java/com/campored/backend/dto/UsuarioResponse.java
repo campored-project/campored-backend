@@ -22,6 +22,8 @@ public class UsuarioResponse {
     private String correo;
     private String telefono;
     private String whatsapp;
+    private boolean canalWhatsappHabilitado;
+    private boolean canalLlamadaHabilitado;
     private Rol rol;
     private String nombreFinca;
     private Municipio municipio;

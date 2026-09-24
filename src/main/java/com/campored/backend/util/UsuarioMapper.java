@@ -17,6 +17,8 @@ public final class UsuarioMapper {
                 .correo(usuario.getCorreo())
                 .telefono(usuario.getTelefono())
                 .whatsapp(usuario.getWhatsapp())
+                .canalWhatsappHabilitado(usuario.isCanalWhatsappHabilitado())
+                .canalLlamadaHabilitado(usuario.isCanalLlamadaHabilitado())
                 .rol(usuario.getRol())
                 .fechaRegistro(usuario.getFechaRegistro());
 
