@@ -2,6 +2,8 @@ package com.campored.backend.config;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -27,15 +29,16 @@ class CorsIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
 
-    @Test
+    @ParameterizedTest(name = "Origin: {0}")
+    @ValueSource(strings = {ORIGEN_FRONTEND, "https://campored-frontend.vercel.app"})
     @DisplayName("Debe aceptar el preflight del frontend con credenciales")
-    void testPreflightDesdeFrontend() throws Exception {
+    void testPreflightDesdeFrontend(String origen) throws Exception {
         mockMvc.perform(options(URL_LOGIN)
-                        .header(HttpHeaders.ORIGIN, ORIGEN_FRONTEND)
+                        .header(HttpHeaders.ORIGIN, origen)
                         .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "PATCH")
                         .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "Authorization, Content-Type"))
                 .andExpect(status().isOk())
-                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, ORIGEN_FRONTEND))
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, origen))
                 .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS, "true"))
                 .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_METHODS, containsString("PATCH")));
     }
