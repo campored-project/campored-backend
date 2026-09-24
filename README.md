@@ -118,7 +118,7 @@ spring.profiles.active=local
 | `SPRING_DATASOURCE_PASSWORD` | Contraseña de la BD | `***` |
 | `JWT_SECRET` | Clave para firmar tokens (mínimo 256 bits) | `your-super-secret-key...` |
 | `JWT_EXPIRATION` | Duración del token en ms (por defecto 24 h) | `86400000` |
-| `CORS_ALLOWED_ORIGINS` | Orígenes permitidos para CORS, separados por coma (por defecto `http://localhost:5173` y `https://campored-frontend.vercel.app`) | `http://localhost:5173,https://campored-frontend.vercel.app` |
+| `CORS_ALLOWED_ORIGINS` | Orígenes permitidos para CORS, separados por coma (por defecto `http://localhost:5173`, `https://campored-frontend.vercel.app` y `https://campored.rollerandres.dev`) | `http://localhost:5173,https://campored-frontend.vercel.app` |
 | `SPRING_PROFILES_ACTIVE` | Perfil activo | `local` / `prod` |
 
 En producción (Railway) estas variables se configuran como variables de entorno del servicio. **Nunca se suben al repositorio.**
@@ -128,12 +128,13 @@ En producción (Railway) estas variables se configuran como variables de entorno
 - Orígenes permitidos:
   - `http://localhost:5173` (frontend Vite dev)
   - `https://campored-frontend.vercel.app` (frontend en producción, Vercel)
+  - `https://campored.rollerandres.dev` (frontend, dominio propio)
 - Para otros orígenes: definirlos en la variable de entorno `CORS_ALLOWED_ORIGINS`
 - Métodos: GET, POST, PUT, PATCH, DELETE, OPTIONS
 - Credenciales: habilitadas
 - Ruta: `/api/**` — Swagger UI no lo necesita porque se sirve desde el mismo origen
 
-> **Nota:** `CORS_ALLOWED_ORIGINS` **reemplaza** el valor por defecto: si la defines, incluye también los dos orígenes anteriores. Escribe cada origen sin `/` final y no uses `*`, que es incompatible con credenciales habilitadas.
+> **Nota:** `CORS_ALLOWED_ORIGINS` **reemplaza** el valor por defecto: si la defines, incluye también los orígenes anteriores. Escribe cada origen sin `/` final y no uses `*`, que es incompatible con credenciales habilitadas.
 
 ---
 
