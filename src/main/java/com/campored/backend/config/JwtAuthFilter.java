@@ -21,6 +21,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.UUID;
 
 @Component
 @RequiredArgsConstructor
@@ -43,9 +44,11 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         try {
             Claims claims = jwtService.validarToken(cabecera.substring(PREFIJO_BEARER.length()));
+            UUID usuarioId = jwtService.extraerUsuarioId(claims);
             String rol = claims.get(JwtService.CLAIM_ROL, String.class);
+            // El principal es el id del usuario: los controladores lo reciben con @AuthenticationPrincipal UUID
             UsernamePasswordAuthenticationToken autenticacion = new UsernamePasswordAuthenticationToken(
-                    claims.getSubject(), null, List.of(new SimpleGrantedAuthority("ROLE_" + rol)));
+                    usuarioId, null, List.of(new SimpleGrantedAuthority("ROLE_" + rol)));
             autenticacion.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
             SecurityContextHolder.getContext().setAuthentication(autenticacion);
         } catch (JwtException | IllegalArgumentException e) {

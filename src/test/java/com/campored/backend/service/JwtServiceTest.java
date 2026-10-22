@@ -4,6 +4,7 @@ import com.campored.backend.entity.Rol;
 import com.campored.backend.entity.Usuario;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.MalformedJwtException;
 import io.jsonwebtoken.security.SignatureException;
 import io.jsonwebtoken.security.WeakKeyException;
 import org.junit.jupiter.api.DisplayName;
@@ -39,6 +40,20 @@ class JwtServiceTest {
         assertEquals("PRODUCTOR", claims.get(JwtService.CLAIM_ROL, String.class));
         assertEquals(usuario.getId().toString(), claims.get(JwtService.CLAIM_USUARIO_ID, String.class));
         assertEquals(60_000, jwtService.getExpiracionMs());
+    }
+
+    @Test
+    @DisplayName("Debe extraer el id del usuario y rechazar tokens que no lo incluyen")
+    void testExtraerUsuarioId() {
+        JwtService jwtService = new JwtService(SECRETO, 60_000);
+        Usuario usuario = productor();
+
+        Claims claims = jwtService.validarToken(jwtService.generarToken(usuario));
+        assertEquals(usuario.getId(), jwtService.extraerUsuarioId(claims));
+
+        usuario.setId(null);
+        Claims sinId = jwtService.validarToken(jwtService.generarToken(usuario));
+        assertThrows(MalformedJwtException.class, () -> jwtService.extraerUsuarioId(sinId));
     }
 
     @Test

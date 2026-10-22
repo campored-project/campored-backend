@@ -3,6 +3,7 @@ package com.campored.backend.service;
 import com.campored.backend.entity.Usuario;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.MalformedJwtException;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Service;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.UUID;
 
 @Service
 public class JwtService {
@@ -45,6 +47,14 @@ public class JwtService {
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
+    }
+
+    public UUID extraerUsuarioId(Claims claims) {
+        String usuarioId = claims.get(CLAIM_USUARIO_ID, String.class);
+        if (usuarioId == null) {
+            throw new MalformedJwtException("El token no identifica al usuario");
+        }
+        return UUID.fromString(usuarioId);
     }
 
     public long getExpiracionMs() {

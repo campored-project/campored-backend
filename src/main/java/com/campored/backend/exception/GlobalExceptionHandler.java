@@ -8,6 +8,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -35,6 +36,30 @@ public class GlobalExceptionHandler {
                                                              HttpServletRequest request) {
         log.warn("Violación de integridad en {}: {}", request.getRequestURI(), ex.getMostSpecificCause().getMessage());
         return construir(HttpStatus.CONFLICT, "El recurso ya existe o entra en conflicto con otro", request, null);
+    }
+
+    @ExceptionHandler(CredencialesInvalidasException.class)
+    public ResponseEntity<ErrorResponse> handleCredencialesInvalidas(CredencialesInvalidasException ex,
+                                                                     HttpServletRequest request) {
+        return construir(HttpStatus.UNAUTHORIZED, ex.getMessage(), request, null);
+    }
+
+    // @PreAuthorize lanza la excepción dentro del controlador; sin este handler la capturaría el genérico como 500
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException ex, HttpServletRequest request) {
+        log.warn("Acceso denegado a {} para el usuario {}", request.getRequestURI(), request.getRemoteUser());
+        return construir(HttpStatus.FORBIDDEN, "El rol del usuario no permite esta operación", request, null);
+    }
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleResourceNotFound(ResourceNotFoundException ex,
+                                                                HttpServletRequest request) {
+        return construir(HttpStatus.NOT_FOUND, ex.getMessage(), request, null);
+    }
+
+    @ExceptionHandler(ReglaNegocioException.class)
+    public ResponseEntity<ErrorResponse> handleReglaNegocio(ReglaNegocioException ex, HttpServletRequest request) {
+        return construir(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), request, null);
     }
 
     @ExceptionHandler(InvalidInputException.class)

@@ -28,7 +28,11 @@
 
 CampoRed conecta pequeños productores agrícolas de **Sonsón** y **San Carlos** (Antioquia) con compradores comerciales (restaurantes, tiendas y mayoristas) del Oriente Antioqueño y el Área Metropolitana de Medellín, eliminando intermediarios en la cadena de distribución local.
 
-Este repositorio contiene el backend del MVP: una API REST modular construida con Spring Boot 3 sobre PostgreSQL, con autenticación JWT, control de acceso por roles (PRODUCTOR / COMPRADOR) y cobertura de tests del **96.4 %** de líneas.
+Este repositorio contiene el backend del MVP: una API REST modular construida con Spring Boot 3 sobre PostgreSQL, con autenticación JWT, control de acceso por roles (PRODUCTOR / COMPRADOR) y cobertura de tests del **96.5 %** de líneas.
+
+**Producción:**
+- **API:** `https://campored-backend-production.up.railway.app/api`
+- **Swagger UI:** `https://campored-backend-production.up.railway.app/swagger-ui.html`
 
 ---
 
@@ -83,7 +87,7 @@ CREATE DATABASE campored_db;
 
 ### 3. Crear el archivo de propiedades local
 
-Crea `src/main/resources/application-local.properties` (este archivo está en `.gitignore`, no se sube al repo):
+Crea `src/main/resources/application-local.properties` (está en `.gitignore`, no se sube al repo):
 
 ```properties
 # Base de datos
@@ -101,7 +105,7 @@ spring.jpa.show-sql=true
 spring.profiles.active=local
 ```
 
-> **Nota:** Si usas la instancia de Supabase del equipo, solicita las credenciales al equipo. La conexión directa es solo IPv6; usa siempre el **Session Pooler** (`aws-0-us-east-2.pooler.supabase.com:5432`).
+> **Nota:** Si usas la instancia de Supabase del equipo, solicita las credenciales. La conexión directa es solo IPv6; usa siempre el **Session Pooler** (`aws-0-us-east-2.pooler.supabase.com:5432`).
 
 ---
 
@@ -114,9 +118,23 @@ spring.profiles.active=local
 | `SPRING_DATASOURCE_PASSWORD` | Contraseña de la BD | `***` |
 | `JWT_SECRET` | Clave para firmar tokens (mínimo 256 bits) | `your-super-secret-key...` |
 | `JWT_EXPIRATION` | Duración del token en ms (por defecto 24 h) | `86400000` |
+| `CORS_ALLOWED_ORIGINS` | Orígenes permitidos para CORS, separados por coma (por defecto `http://localhost:5173`, `https://campored-frontend.vercel.app` y `https://campored.rollerandres.dev`) | `http://localhost:5173,https://campored-frontend.vercel.app` |
 | `SPRING_PROFILES_ACTIVE` | Perfil activo | `local` / `prod` |
 
-En producción (Railway / Render) estas variables se configuran como variables de entorno del servicio. **Nunca se suben al repositorio.**
+En producción (Railway) estas variables se configuran como variables de entorno del servicio. **Nunca se suben al repositorio.**
+
+### CORS
+
+- Orígenes permitidos:
+  - `http://localhost:5173` (frontend Vite dev)
+  - `https://campored-frontend.vercel.app` (frontend en producción, Vercel)
+  - `https://campored.rollerandres.dev` (frontend, dominio propio)
+- Para otros orígenes: definirlos en la variable de entorno `CORS_ALLOWED_ORIGINS`
+- Métodos: GET, POST, PUT, PATCH, DELETE, OPTIONS
+- Credenciales: habilitadas
+- Ruta: `/api/**` — Swagger UI no lo necesita porque se sirve desde el mismo origen
+
+> **Nota:** `CORS_ALLOWED_ORIGINS` **reemplaza** el valor por defecto: si la defines, incluye también los orígenes anteriores. Escribe cada origen sin `/` final y no uses `*`, que es incompatible con credenciales habilitadas.
 
 ---
 
@@ -153,7 +171,7 @@ El backend sigue un patrón en capas estricto: **Controller → Service → Repo
 src/
 ├── main/
 │   ├── java/com/campored/backend/
-│   │   ├── config/             # SecurityConfig, JwtAuthFilter, CorsConfig, SwaggerConfig
+│   │   ├── config/             # SecurityConfig, JwtAuthFilter, CorsConfig
 │   │   ├── controller/         # REST Controllers (AuthController, UsuarioController)
 │   │   ├── dto/                # Request/Response objects
 │   │   │   └── validation/     # Anotaciones y validadores personalizados
@@ -169,7 +187,7 @@ src/
 │
 └── test/
     └── java/com/campored/backend/
-        ├── config/             # SecurityIntegrationTest
+        ├── config/             # SecurityIntegrationTest, CorsIntegrationTest
         ├── controller/         # UsuarioControllerIntegrationTest
         └── service/            # UsuarioServiceTest, JwtServiceTest
 ```
@@ -182,35 +200,32 @@ src/
 
 ```
 Usuario
-├── id              UUID (PK)
-├── correo          VARCHAR UNIQUE NOT NULL
-├── contrasena_hash VARCHAR NOT NULL
-├── nombre          VARCHAR NOT NULL
-├── telefono        VARCHAR (opcional)
-├── rol             ENUM {PRODUCTOR, COMPRADOR}
+├── id                         UUID (PK)
+├── correo                     VARCHAR UNIQUE NOT NULL
+├── contrasena_hash            VARCHAR NOT NULL
+├── nombre                     VARCHAR NOT NULL
+├── telefono                   VARCHAR (opcional)
+├── rol                        ENUM {PRODUCTOR, COMPRADOR}
 ├── canal_whatsapp_habilitado  BOOLEAN DEFAULT false
 ├── canal_llamada_habilitado   BOOLEAN DEFAULT false
-├── created_at      TIMESTAMP
-│
-├── finca           (solo si rol = PRODUCTOR)
-└── negocio         (solo si rol = COMPRADOR)
+└── created_at                 TIMESTAMP
 
-Finca
+Finca  (solo si rol = PRODUCTOR)
 ├── id              UUID (PK)
 ├── usuario_id      FK → Usuario
 ├── nombre_finca    VARCHAR NOT NULL
-├── municipio       ENUM {SONSON, SAN_CARLOS}
+├── municipio       VARCHAR NOT NULL
 └── vereda          VARCHAR
 
-Negocio
-├── id              UUID (PK)
-├── usuario_id      FK → Usuario
-├── nombre_negocio  VARCHAR NOT NULL
-├── tipo_negocio    ENUM {RESTAURANTE, TIENDA, MINIMERCADO, MAYORISTA}
-├── municipio       ENUM
-├── direccion       VARCHAR NOT NULL
-├── horario         VARCHAR
-└── notas_acceso    VARCHAR
+Negocio  (solo si rol = COMPRADOR)
+├── id                UUID (PK)
+├── usuario_id        FK → Usuario UNIQUE
+├── nombre_negocio    VARCHAR NOT NULL
+├── tipo_negocio      VARCHAR NOT NULL
+├── direccion         VARCHAR NOT NULL
+├── municipio         VARCHAR NOT NULL
+├── horario_recepcion VARCHAR (opcional)
+└── notas_acceso      VARCHAR (opcional)
 ```
 
 **Regla:** un usuario tiene `Finca` **o** `Negocio`, nunca ambos.
@@ -223,9 +238,9 @@ Negocio
 
 | Método | Endpoint | Descripción | Auth |
 |---|---|---|---|
-| `POST` | `/api/auth/registro/productor` | Registrar productor con datos de finca | ❌ Público |
-| `POST` | `/api/auth/registro/comprador` | Registrar comprador con datos de negocio | ❌ Público |
-| `POST` | `/api/auth/login` | Autenticar y obtener JWT | ❌ Público |
+| `POST` | `/api/auth/registro/productor` | Registrar productor con datos de finca | Público |
+| `POST` | `/api/auth/registro/comprador` | Registrar comprador con datos de negocio | Público |
+| `POST` | `/api/auth/login` | Autenticar y obtener JWT | Público |
 
 #### POST `/api/auth/registro/productor`
 
@@ -243,12 +258,39 @@ Negocio
 
 // Response 201
 {
-  "id": "uuid",
-  "correo": "juan@finca.com",
-  "nombre": "Juan Pérez",
-  "rol": "PRODUCTOR",
-  "token": "eyJhbGciOiJIUzI1NiJ9..."
+  "token": "eyJhbGciOiJIUzI1NiJ9...",
+  "tipo": "Bearer",
+  "expiraEnMs": 86400000,
+  "usuario": {
+    "id": "uuid",
+    "nombre": "Juan Pérez",
+    "correo": "juan@finca.com",
+    "rol": "PRODUCTOR",
+    "nombreFinca": "Finca La Esperanza",
+    "municipio": "SONSON",
+    "vereda": "El Sauce",
+    "canalWhatsappHabilitado": false,
+    "canalLlamadaHabilitado": false
+  }
 }
+```
+
+#### POST `/api/auth/registro/comprador`
+
+```json
+// Request
+{
+  "correo": "restaurante@email.com",
+  "contrasena": "SecurePass123!",
+  "nombre": "Restaurante El Oriente",
+  "nombreNegocio": "El Oriente",
+  "tipoNegocio": "RESTAURANTE",
+  "municipio": "SAN_CARLOS",
+  "direccion": "Cra 5 #12-34",
+  "telefono": "+573007654321"
+}
+
+// Response 201 — misma estructura que productor, rol: COMPRADOR
 ```
 
 #### POST `/api/auth/login`
@@ -260,13 +302,7 @@ Negocio
   "contrasena": "SecurePass123!"
 }
 
-// Response 200
-{
-  "token": "eyJhbGciOiJIUzI1NiJ9...",
-  "id": "uuid",
-  "correo": "juan@finca.com",
-  "rol": "PRODUCTOR"
-}
+// Response 200 — misma estructura de token y usuario
 ```
 
 ---
@@ -275,44 +311,33 @@ Negocio
 
 | Método | Endpoint | Descripción | Auth |
 |---|---|---|---|
-| `PATCH` | `/api/usuarios/perfil/productor` | Actualizar perfil del productor autenticado | ✅ PRODUCTOR |
-| `PATCH` | `/api/usuarios/perfil/comprador` | Actualizar perfil del comprador autenticado | ✅ COMPRADOR |
+| `PATCH` | `/api/usuarios/perfil/productor` | Actualizar perfil del productor autenticado | PRODUCTOR |
+| `PATCH` | `/api/usuarios/perfil/comprador` | Actualizar perfil del comprador autenticado | COMPRADOR |
 
 #### PATCH `/api/usuarios/perfil/productor`
 
-Solo se actualizan los campos enviados. Un campo ausente conserva su valor; una cadena vacía `""` borra los campos opcionales.
+Solo se actualizan los campos enviados. Un campo ausente conserva su valor; `""` borra los campos opcionales.
 
 ```json
-// Request (parcial — solo los campos a actualizar)
+// Request (parcial)
 {
   "telefono": "+573009876543",
   "canalWhatsappHabilitado": true,
   "canalLlamadaHabilitado": false
 }
-
-// Response 200
-{
-  "id": "uuid",
-  "nombre": "Juan Pérez",
-  "correo": "juan@finca.com",
-  "telefono": "+573009876543",
-  "canalWhatsappHabilitado": true,
-  "canalLlamadaHabilitado": false,
-  "rol": "PRODUCTOR"
-}
 ```
 
-> **Regla de canales:** si `canalWhatsappHabilitado` o `canalLlamadaHabilitado` es `true`, el campo `telefono` debe estar presente en el perfil. La validación opera sobre el estado final del perfil, no solo sobre el body enviado.
+> **Regla de canales:** si `canalWhatsappHabilitado` o `canalLlamadaHabilitado` es `true`, el campo `telefono` debe estar presente en el perfil.
 
 #### PATCH `/api/usuarios/perfil/comprador`
 
 ```json
-// Request
+// Request (parcial)
 {
   "direccion": "Cra 5 #12-34",
   "municipio": "SAN_CARLOS",
-  "horario": "Lunes a viernes 8am–5pm",
-  "notas_acceso": "Tocar al portero",
+  "horarioRecepcion": "Lunes a viernes 8am-5pm",
+  "notasAcceso": "Tocar al portero",
   "telefono": "+573001112233",
   "canalWhatsappHabilitado": true
 }
@@ -320,18 +345,35 @@ Solo se actualizan los campos enviados. Un campo ausente conserva su valor; una 
 
 ---
 
-### Códigos de respuesta generales
+### Valores válidos (enums)
+
+| Campo | Valores aceptados |
+|---|---|
+| `municipio` | `SONSON`, `SAN_CARLOS` |
+| `tipoNegocio` | `RESTAURANTE`, `TIENDA`, `MINIMERCADO`, `MAYORISTA` |
+
+### Códigos de respuesta
 
 | Código | Significado |
 |---|---|
 | `200` | OK |
 | `201` | Recurso creado |
-| `400` | Validación fallida — el body incluye `errores` con detalle por campo |
+| `400` | Validación fallida — campo `errores` con detalle por campo |
 | `401` | Token ausente, inválido, expirado o con firma incorrecta |
 | `403` | Token válido pero rol insuficiente |
 | `404` | Recurso no encontrado |
-| `409` | Conflicto — correo ya registrado |
+| `409` | Correo ya registrado |
 | `500` | Error interno del servidor |
+
+Formato del `400`:
+```json
+{
+  "errores": {
+    "correo": "El correo ya está registrado",
+    "contrasena": "Mínimo 8 caracteres"
+  }
+}
+```
 
 ---
 
@@ -342,8 +384,8 @@ Solo se actualizan los campos enviados. Un campo ausente conserva su valor; una 
 - Algoritmo: **HS256**
 - Expiración por defecto: **24 horas** (`jwt.expiration=86400000`)
 - El principal del token es el **UUID** del usuario (claim `uid`), no el correo
-- Payload del token: `sub` (correo), `uid` (UUID), `rol`, `iat`, `exp` — sin datos sensibles
-- Contraseñas: cifradas con **BCrypt costo 10** (conforme a OWASP 2021)
+- Payload: `sub` (correo), `uid` (UUID), `rol`, `iat`, `exp` — sin datos sensibles
+- Contraseñas: cifradas con **BCrypt costo 10** (OWASP 2021)
 - Un token sin claim `uid` es rechazado con `401`
 
 ### Flujo de autorización
@@ -368,8 +410,6 @@ Request
 - `POST /api/auth/login`
 - `GET /swagger-ui/**` y `GET /v3/api-docs/**`
 
-Todo lo demás requiere JWT válido en el header `Authorization: Bearer <token>`.
-
 ---
 
 ## Testing
@@ -392,28 +432,27 @@ Todo lo demás requiere JWT válido en el header `Authorization: Bearer <token>`
 
 | Métrica | Valor |
 |---|---|
-| Total de tests | **78** |
-| Resultado | ✅ 78 / 0 — BUILD SUCCESS |
-| Cobertura de líneas | **96.4 %** |
+| Total de tests | **82** |
+| Resultado | 82 / 0 — BUILD SUCCESS |
+| Cobertura de líneas | **96.5 %** |
 | Cobertura service | 100 % |
 | Cobertura controller | 100 % |
 | Cobertura config / util | 100 % |
 
-### Cobertura mínima exigida (CLAUDE.md)
+### Cobertura mínima exigida
 
 | Capa | Mínimo |
 |---|---|
 | Service | 80 % |
 | Controller | 70 % |
 
-### Qué se prueba
+### Suites de tests
 
-- `UsuarioServiceTest` — registro de productor/comprador, actualización de perfil, validación de canales de contacto, correo duplicado, municipio inválido
-- `JwtServiceTest` — generación del token, claims (`sub`, `uid`, `rol`), expiración de 24 h, BCrypt costo ≥ 10
-- `UsuarioControllerIntegrationTest` — flujo completo HTTP de perfiles PATCH, control por rol
-- `SecurityIntegrationTest` — 401 sin token, token mal formado, esquema Basic, firma de otra clave, token expirado; 403 por rol incorrecto
-
-> Los tests del perfil de producción usan `@ActiveProfiles("test")` con `jwt.expiration=3600000` (1 h). Un test independiente en `JwtServiceTest` verifica que el valor por defecto del perfil de producción siga siendo 24 h.
+- `UsuarioServiceTest` — registro productor/comprador, actualización de perfil, validación de canales, correo duplicado, municipio inválido
+- `JwtServiceTest` — generación del token, claims (`sub`, `uid`, `rol`), expiración 24 h, BCrypt costo >= 10
+- `UsuarioControllerIntegrationTest` — flujo HTTP completo de perfiles PATCH, control por rol
+- `SecurityIntegrationTest` — 401 sin token, token mal formado, esquema Basic, firma incorrecta, token expirado; 403 por rol incorrecto
+- `CorsIntegrationTest` — preflight desde el frontend, origen no permitido rechazado (403), cabeceras CORS en respuestas 401
 
 ---
 
@@ -423,31 +462,26 @@ Todo lo demás requiere JWT válido en el header `Authorization: Bearer <token>`
 
 | Rama | Propósito |
 |---|---|
-| `main` | Producción — solo recibe merge desde `develop` al cierre de cada sprint |
+| `main` | Producción — solo recibe merge desde `develop` al cierre de sprint |
 | `develop` | Integración — todas las features se mergean aquí |
 | `US-XX-descripcion` | Rama de feature por historia de usuario |
 
 ### Ciclo por historia de usuario
 
 ```bash
-# 1. Partir de develop actualizado
 git checkout develop
 git pull origin develop
-
-# 2. Crear rama de feature
 git checkout -b US-06-publicar-oferta
 
-# 3. Desarrollar + tests
+# Desarrollar + tests
 
-# 4. Commit (propuesto por Claude Code, ejecutado por el desarrollador)
 git add src/...
 git commit -m "feat(US-06): ... Fixes: #US-06"
-
-# 5. Push y abrir PR → develop en GitHub
 git push origin US-06-publicar-oferta
 
-# 6. Code review → merge
-# 7. Cerrar HU en Azure (status → Done)
+# Abrir PR a develop en GitHub
+# Code review → merge
+# Cerrar HU en Azure (status → Done)
 ```
 
 **Claude Code nunca hace `git push` automáticamente.** El desarrollador revisa y ejecuta todos los comandos Git.
@@ -456,8 +490,7 @@ git push origin US-06-publicar-oferta
 
 ## Integración con Azure DevOps
 
-El tablero del proyecto está en:
-[dev.azure.com/campoRed/CampoRed_ProyectoIntegrador2](https://dev.azure.com/campoRed/CampoRed_ProyectoIntegrador2)
+Tablero: [dev.azure.com/campoRed/CampoRed_ProyectoIntegrador2](https://dev.azure.com/campoRed/CampoRed_ProyectoIntegrador2)
 
 ### Formato de commit obligatorio
 
@@ -471,8 +504,6 @@ feat(US-XX): Descripción concisa en imperativo
 Fixes: #US-XX
 ```
 
-La línea `Fixes: #US-XX` vincula el commit a la historia de usuario en Azure. Al mergear el PR a `develop`, Azure detecta el cierre automáticamente.
-
 ### Prefijos de commit
 
 | Prefijo | Uso |
@@ -482,15 +513,23 @@ La línea `Fixes: #US-XX` vincula el commit a la historia de usuario en Azure. A
 | `test` | Agregar o corregir tests |
 | `refactor` | Refactorización sin cambio de comportamiento |
 | `docs` | Documentación |
-| `chore` | Tareas de mantenimiento (deps, gitignore, config) |
+| `chore` | Tareas de mantenimiento |
 
 ---
 
 ## Despliegue
 
-### Producción (Supabase + Railway/Render)
+### Entornos
 
-La BD en producción corre en **Supabase** (region `us-east-2`). Usar siempre el **Session Pooler** para la conexión:
+| Entorno | Plataforma | URL |
+|---|---|---|
+| Producción API | Railway | `https://campored-backend-production.up.railway.app` |
+| Producción frontend | Vercel | `https://campored-frontend.vercel.app` |
+| Base de datos | Supabase (us-east-2) | Session Pooler |
+
+### Conexión a Supabase
+
+Usar siempre el **Session Pooler** (la conexión directa es solo IPv6):
 
 ```
 Host:     aws-0-us-east-2.pooler.supabase.com
@@ -499,15 +538,21 @@ User:     postgres.xdmodvpumekckgwdvgln
 Database: postgres
 ```
 
-La conexión directa de Supabase es solo IPv6 y no funciona en la red del equipo.
+### Deploy automático
 
-El perfil de producción usa `spring.jpa.hibernate.ddl-auto=validate`. Las migraciones de esquema se aplican **manualmente** en el SQL Editor de Supabase antes de cada despliegue, usando los scripts en `src/main/resources/db/migration/`.
+Railway despliega automáticamente al detectar un push a la rama `develop`. Tiempo estimado: ~2 minutos.
 
-### Migraciones aplicadas
+El perfil de producción usa `spring.jpa.hibernate.ddl-auto=validate` — Hibernate **no** crea ni modifica tablas. Toda migración de esquema debe aplicarse manualmente en Supabase antes del deploy.
 
-| Script | Descripción | Aplicado |
+### Migraciones aplicadas en Supabase
+
+Los scripts están en `src/main/resources/db/migration/`.
+
+| Script | Descripción | Sprint |
 |---|---|---|
-| `US-04_canales_contacto_usuarios.sql` | Agrega `canal_whatsapp_habilitado` y `canal_llamada_habilitado` a `usuarios` | ✅ Sprint 1 |
+| Schema inicial | Tablas `usuarios`, `fincas`; ENUMs `rol_usuario`, `municipio_enum`, `tipo_negocio_enum` | Sprint 1 |
+| Tabla `negocios` | Columnas: `nombre_negocio`, `tipo_negocio`, `direccion`, `municipio`, `horario_recepcion`, `notas_acceso`, `usuario_id` | Sprint 1 |
+| `US-04_canales_contacto_usuarios.sql` | Columnas `canal_whatsapp_habilitado` y `canal_llamada_habilitado` en `usuarios` | Sprint 1 |
 
 ---
 
@@ -518,10 +563,10 @@ El perfil de producción usa `spring.jpa.hibernate.ddl-auto=validate`. Las migra
 | Cristian David Diez López | Backend — Spring Boot, arquitectura de datos, API REST | 1036967493 |
 | Roller Andres Hernández López | Frontend — React, diseño UX/UI, testing | 1001226439 |
 
-**Tutora:** Sandra Patricia Zabala Orrego  
-**Asignatura:** Proyecto Integrador II — Universidad de Antioquia, Facultad de Ingeniería  
+**Tutora:** Sandra Patricia Zabala Orrego
+**Asignatura:** Proyecto Integrador II — Universidad de Antioquia, Facultad de Ingeniería
 **Semestre:** 2026-2
 
 ---
 
-*Sprint actual: Sprint 1 completado — autenticación JWT + perfiles sectorizados (US-01 al US-05, US-21)*
+*Sprint 1 completado — autenticación JWT + perfiles sectorizados (US-01, US-02, US-03, US-04, US-05, US-21) — desplegado en Railway*
