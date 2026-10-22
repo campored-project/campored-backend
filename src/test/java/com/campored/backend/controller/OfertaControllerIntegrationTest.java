@@ -41,6 +41,7 @@ import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -460,6 +461,22 @@ class OfertaControllerIntegrationTest {
                 .andExpect(jsonPath("$.totalElements").value(1))
                 .andExpect(jsonPath("$.size").value(20))
                 .andExpect(jsonPath("$.number").value(0));
+    }
+
+    @Test
+    @DisplayName("Debe responder el catálogo con un contrato de página estable")
+    void testCatalogoContratoPageResponse() throws Exception {
+        String cuerpo = mockMvc.perform(get(URL_OFERTAS))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.first").value(true))
+                .andExpect(jsonPath("$.last").value(true))
+                .andExpect(jsonPath("$.empty").value(true))
+                .andReturn().getResponse().getContentAsString();
+
+        List<String> campos = new ArrayList<>();
+        objectMapper.readTree(cuerpo).fieldNames().forEachRemaining(campos::add);
+        assertEquals(List.of("content", "number", "size", "totalElements", "totalPages", "first", "last", "empty"),
+                campos);
     }
 
     @Test

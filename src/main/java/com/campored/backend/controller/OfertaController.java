@@ -12,6 +12,7 @@ import com.campored.backend.dto.FiltroCatalogoOfertas;
 import com.campored.backend.dto.OfertaCatalogoResponse;
 import com.campored.backend.dto.OfertaDetalleResponse;
 import com.campored.backend.dto.OfertaResponse;
+import com.campored.backend.dto.PageResponse;
 import com.campored.backend.entity.EstadoCultivo;
 import com.campored.backend.entity.ModalidadLogistica;
 import com.campored.backend.entity.Municipio;
@@ -29,7 +30,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springdoc.core.annotations.ParameterObject;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
@@ -119,7 +119,7 @@ public class OfertaController {
     @ApiResponse(responseCode = "200", description = "Página de ofertas que cumplen los filtros")
     @ApiResponse(responseCode = "400", description = "Filtro con un valor fuera del catálogo o campo de orden no permitido",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
-    public Page<OfertaCatalogoResponse> listarCatalogo(
+    public PageResponse<OfertaCatalogoResponse> listarCatalogo(
             @Parameter(description = "Código o nombre del municipio de la finca, sin distinguir mayúsculas ni tildes "
                     + "(SONSON, sonson, Sonsón, SAN_CARLOS, San Carlos)", example = "SONSON")
             @RequestParam(required = false) String municipio,
@@ -134,7 +134,7 @@ public class OfertaController {
             @ParameterObject @PageableDefault(size = 20) Pageable pageable) {
         FiltroCatalogoOfertas filtro = new FiltroCatalogoOfertas(
                 resolverMunicipio(municipio), estadoCultivo, producto, modalidadLogistica);
-        return ofertaService.listarCatalogo(filtro, pageable);
+        return PageResponse.of(ofertaService.listarCatalogo(filtro, pageable));
     }
 
     // ============================================================
