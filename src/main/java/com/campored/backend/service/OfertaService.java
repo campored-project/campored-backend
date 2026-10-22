@@ -1,0 +1,241 @@
+// ============================================================
+// FEATURE: US-06 — Crear Oferta de Producto (Sprint 2)
+// Autor: Cristian Diez
+// Fecha: 2026-10-22
+// Descripción: Publicación de ofertas con estado de cultivo y modalidad logística
+// ============================================================
+package com.campored.backend.service;
+
+import com.campored.backend.dto.CrearOfertaRequest;
+import com.campored.backend.dto.FiltroCatalogoOfertas;
+import com.campored.backend.dto.OfertaCatalogoResponse;
+import com.campored.backend.dto.OfertaDetalleResponse;
+import com.campored.backend.dto.OfertaResponse;
+import com.campored.backend.entity.EstadoCultivo;
+import com.campored.backend.entity.EstadoPublicacion;
+import com.campored.backend.entity.Finca;
+import com.campored.backend.entity.Oferta;
+import com.campored.backend.entity.Producto;
+import com.campored.backend.entity.Rol;
+import com.campored.backend.entity.Usuario;
+import com.campored.backend.exception.AccesoDenegadoException;
+import com.campored.backend.exception.InvalidInputException;
+import com.campored.backend.exception.ReglaNegocioException;
+import com.campored.backend.exception.ResourceNotFoundException;
+import com.campored.backend.repository.OfertaRepository;
+import com.campored.backend.repository.OfertaSpecifications;
+import com.campored.backend.repository.UsuarioRepository;
+import com.campored.backend.util.OfertaMapper;
+import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Clock;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+
+@Service
+@RequiredArgsConstructor
+public class OfertaService {
+
+    public static final String MENSAJE_PRODUCTOR_SIN_FINCA =
+            "El productor debe tener una finca registrada para publicar ofertas";
+    public static final String MENSAJE_OFERTA_NO_DISPONIBLE = "La oferta no existe o no está disponible";
+    public static final String MENSAJE_OFERTA_NO_ENCONTRADA = "La oferta no existe";
+    public static final String MENSAJE_OFERTA_AJENA = "No tienes permiso para modificar esta oferta.";
+    public static final String MENSAJE_OFERTA_AGOTADA_NO_EDITABLE =
+            "Las ofertas agotadas no se pueden editar. Puedes crear una nueva oferta.";
+    public static final String MENSAJE_OFERTA_NO_REACTIVABLE =
+            "Una oferta agotada no se puede reactivar. Puedes crear una nueva oferta.";
+    public static final String MENSAJE_OFERTA_YA_AGOTADA = "La oferta ya está marcada como agotada.";
+    public static final int TAMANO_MAXIMO_PAGINA = 50;
+
+    private static final Set<String> CAMPOS_ORDENABLES = Set.of("fechaCreacion", "precioUnitario", "fechaEstimadaCosecha");
+
+    private static final Sort ORDEN_POR_DEFECTO = Sort.by(Sort.Direction.DESC, "fechaCreacion");
+    // Desempate estable: sin él, ofertas con el mismo precio o fecha pueden repetirse entre páginas
+    private static final Sort DESEMPATE = Sort.by(Sort.Direction.ASC, "id");
+
+    private static final Logger log = LoggerFactory.getLogger(OfertaService.class);
+
+    private final OfertaRepository ofertaRepository;
+    private final UsuarioRepository usuarioRepository;
+    private final Clock clock;
+
+    @Transactional
+    public OfertaResponse crearOferta(UUID productorId, CrearOfertaRequest request) {
+        Usuario productor = buscarProductor(productorId);
+        Finca finca = productor.getFinca();
+        if (finca == null) {
+            log.warn("Productor {} intentó publicar una oferta sin finca registrada", productorId);
+            throw new ReglaNegocioException(MENSAJE_PRODUCTOR_SIN_FINCA);
+        }
+
+        Oferta oferta = new Oferta();
+        oferta.setProductor(productor);
+        oferta.setFinca(finca);
+        aplicarCamposEditables(oferta, request);
+        oferta.setActiva(true);
+
+        Oferta guardada = ofertaRepository.save(oferta);
+        log.info("Oferta {} publicada por el productor {}", guardada.getId(), productorId);
+        return OfertaMapper.toResponse(guardada);
+    }
+
+    // ============================================================
+    // FEATURE: US-08 — Editar Oferta (Sprint 2)
+    // Autor: Cristian Diez
+    // Fecha: 2026-10-22
+    // Descripción: Reemplazo completo de los campos editables de una oferta activa propia
+    // ============================================================
+    // Las reglas de formato (fecha futura, productoOtro obligatorio) ya las validó OfertaValidator sobre el
+    // mismo CrearOfertaRequest. id, productor, finca, fechaCreacion y activa no se modifican
+    @Transactional
+    public OfertaResponse actualizarOferta(UUID ofertaId, UUID productorId, CrearOfertaRequest request) {
+        Oferta oferta = buscarOfertaPropia(ofertaId, productorId);
+        if (!oferta.isActiva()) {
+            log.warn("Productor {} intentó editar la oferta agotada {}", productorId, ofertaId);
+            throw new ReglaNegocioException(MENSAJE_OFERTA_AGOTADA_NO_EDITABLE);
+        }
+
+        aplicarCamposEditables(oferta, request);
+
+        Oferta guardada = ofertaRepository.save(oferta);
+        log.info("Oferta {} actualizada por el productor {}", guardada.getId(), productorId);
+        return OfertaMapper.toResponse(guardada);
+    }
+
+    // ============================================================
+    // FEATURE: US-09 — Marcar Oferta como Agotada (Sprint 2)
+    // Autor: Cristian Diez
+    // Fecha: 2026-10-22
+    // Descripción: Borrado lógico de una oferta propia para retirarla del catálogo
+    // ============================================================
+    // No se elimina el registro: activa=false la saca del catálogo y del detalle público, y mis-ofertas
+    // la sigue mostrando como AGOTADA. El cambio es de una sola vía
+    @Transactional
+    public OfertaResponse cambiarEstado(UUID ofertaId, UUID productorId, EstadoPublicacion nuevoEstado) {
+        Oferta oferta = buscarOfertaPropia(ofertaId, productorId);
+        if (nuevoEstado != EstadoPublicacion.AGOTADA) {
+            throw new ReglaNegocioException(MENSAJE_OFERTA_NO_REACTIVABLE);
+        }
+        if (!oferta.isActiva()) {
+            throw new ReglaNegocioException(MENSAJE_OFERTA_YA_AGOTADA);
+        }
+
+        oferta.setActiva(false);
+
+        Oferta guardada = ofertaRepository.save(oferta);
+        log.info("Oferta {} marcada como agotada por el productor {}", guardada.getId(), productorId);
+        return OfertaMapper.toResponse(guardada);
+    }
+
+    // Orden de chequeo: existencia (404) y luego propiedad (403)
+    private Oferta buscarOfertaPropia(UUID ofertaId, UUID productorId) {
+        Oferta oferta = ofertaRepository.findById(ofertaId)
+                .orElseThrow(() -> new ResourceNotFoundException(MENSAJE_OFERTA_NO_ENCONTRADA));
+        if (!oferta.getProductor().getId().equals(productorId)) {
+            log.warn("Productor {} intentó modificar la oferta {} de otro productor", productorId, ofertaId);
+            throw new AccesoDenegadoException(MENSAJE_OFERTA_AJENA);
+        }
+        return oferta;
+    }
+
+    // Compartido por creación (US-06) y edición (US-08) para que ambas apliquen las mismas reglas
+    private void aplicarCamposEditables(Oferta oferta, CrearOfertaRequest request) {
+        oferta.setProducto(request.getProducto());
+        // La BD exige producto_otro NULL cuando el producto pertenece al catálogo
+        oferta.setProductoOtro(request.getProducto() == Producto.OTRO ? textoOpcional(request.getProductoOtro()) : null);
+        oferta.setDescripcion(textoOpcional(request.getDescripcion()));
+        oferta.setCantidadDisponible(request.getCantidadDisponible());
+        oferta.setUnidadMedida(request.getUnidadMedida());
+        oferta.setPrecioUnitario(request.getPrecioUnitario());
+        oferta.setEstadoCultivo(request.getEstadoCultivo());
+        // Un producto disponible no tiene cosecha pendiente; la BD exige fecha_estimada_cosecha NULL en ese caso
+        oferta.setFechaEstimadaCosecha(request.getEstadoCultivo() == EstadoCultivo.DISPONIBLE
+                ? null : request.getFechaEstimadaCosecha());
+        oferta.setModalidadLogistica(request.getModalidadLogistica());
+    }
+
+    // ============================================================
+    // FEATURE: US-12 — Listar mis Ofertas (Sprint 2)
+    // Autor: Cristian Diez
+    // Fecha: 2026-10-22
+    // Descripción: Consulta de las ofertas publicadas por el productor autenticado
+    // ============================================================
+    @Transactional(readOnly = true)
+    public List<OfertaResponse> listarMisOfertas(UUID productorId) {
+        return ofertaRepository.findByProductorIdOrderByFechaCreacionDesc(productorId).stream()
+                .map(OfertaMapper::toResponse)
+                .toList();
+    }
+
+    // ============================================================
+    // FEATURE: US-11 / US-13 — Catálogo Público de Ofertas (Sprint 2)
+    // Autor: Cristian Diez
+    // Fecha: 2026-10-22
+    // Descripción: Consulta paginada de ofertas activas con filtros combinables
+    // ============================================================
+    @Transactional(readOnly = true)
+    public Page<OfertaCatalogoResponse> listarCatalogo(FiltroCatalogoOfertas filtro, Pageable pageable) {
+        Specification<Oferta> especificacion = Specification.where(OfertaSpecifications.activas())
+                .and(OfertaSpecifications.conMunicipio(filtro.municipio()))
+                .and(OfertaSpecifications.conEstadoCultivo(filtro.estadoCultivo()))
+                .and(OfertaSpecifications.conProducto(filtro.producto()))
+                .and(OfertaSpecifications.conModalidadLogistica(filtro.modalidadLogistica()));
+        LocalDate hoy = LocalDate.now(clock);
+        return ofertaRepository.findAll(especificacion, paginaDelCatalogo(pageable))
+                .map(oferta -> OfertaMapper.toCatalogoResponse(oferta, hoy));
+    }
+
+    // ============================================================
+    // FEATURE: US-12 — Detalle de Oferta (Sprint 2)
+    // Autor: Cristian Diez
+    // Fecha: 2026-10-22
+    // Descripción: Consulta pública de una oferta activa con su finca y productor
+    // ============================================================
+    // El mismo mensaje para inexistente e inactiva: el endpoint es anónimo y no debe revelar cuál es el caso.
+    // esComprador lo resuelve el controlador: los números de contacto solo se entregan a compradores
+    @Transactional(readOnly = true)
+    public OfertaDetalleResponse obtenerDetalle(UUID id, boolean esComprador) {
+        return ofertaRepository.findByIdAndActivaTrue(id)
+                .map(oferta -> OfertaMapper.toDetalleResponse(oferta, LocalDate.now(clock), esComprador))
+                .orElseThrow(() -> new ResourceNotFoundException(MENSAJE_OFERTA_NO_DISPONIBLE));
+    }
+
+    private Pageable paginaDelCatalogo(Pageable pageable) {
+        Sort orden = pageable.getSort().isSorted() ? validarOrden(pageable.getSort()) : ORDEN_POR_DEFECTO;
+        int tamano = Math.min(pageable.getPageSize(), TAMANO_MAXIMO_PAGINA);
+        return PageRequest.of(pageable.getPageNumber(), tamano, orden.and(DESEMPATE));
+    }
+
+    private Sort validarOrden(Sort orden) {
+        orden.stream()
+                .filter(criterio -> !CAMPOS_ORDENABLES.contains(criterio.getProperty()))
+                .findFirst()
+                .ifPresent(criterio -> {
+                    throw new InvalidInputException("No se puede ordenar por '" + criterio.getProperty()
+                            + "'. Campos permitidos: fechaCreacion, precioUnitario, fechaEstimadaCosecha");
+                });
+        return orden;
+    }
+
+    private Usuario buscarProductor(UUID productorId) {
+        return usuarioRepository.findById(productorId)
+                .filter(usuario -> usuario.getRol() == Rol.PRODUCTOR)
+                .orElseThrow(() -> new ResourceNotFoundException("Perfil de usuario no encontrado"));
+    }
+
+    private String textoOpcional(String valor) {
+        return valor == null || valor.isBlank() ? null : valor.trim();
+    }
+}
