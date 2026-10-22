@@ -17,6 +17,7 @@ import com.campored.backend.entity.Oferta;
 import com.campored.backend.entity.Producto;
 import com.campored.backend.entity.Rol;
 import com.campored.backend.entity.Usuario;
+import com.campored.backend.exception.AccesoDenegadoException;
 import com.campored.backend.exception.InvalidInputException;
 import com.campored.backend.exception.ReglaNegocioException;
 import com.campored.backend.exception.ResourceNotFoundException;
@@ -48,6 +49,10 @@ public class OfertaService {
     public static final String MENSAJE_PRODUCTOR_SIN_FINCA =
             "El productor debe tener una finca registrada para publicar ofertas";
     public static final String MENSAJE_OFERTA_NO_DISPONIBLE = "La oferta no existe o no está disponible";
+    public static final String MENSAJE_OFERTA_NO_ENCONTRADA = "La oferta no existe";
+    public static final String MENSAJE_OFERTA_AJENA = "No tienes permiso para modificar esta oferta.";
+    public static final String MENSAJE_OFERTA_AGOTADA_NO_EDITABLE =
+            "Las ofertas agotadas no se pueden editar. Puedes crear una nueva oferta.";
     public static final int TAMANO_MAXIMO_PAGINA = 50;
 
     private static final Set<String> CAMPOS_ORDENABLES = Set.of("fechaCreacion", "precioUnitario", "fechaEstimadaCosecha");
@@ -74,6 +79,50 @@ public class OfertaService {
         Oferta oferta = new Oferta();
         oferta.setProductor(productor);
         oferta.setFinca(finca);
+        aplicarCamposEditables(oferta, request);
+        oferta.setActiva(true);
+
+        Oferta guardada = ofertaRepository.save(oferta);
+        log.info("Oferta {} publicada por el productor {}", guardada.getId(), productorId);
+        return OfertaMapper.toResponse(guardada);
+    }
+
+    // ============================================================
+    // FEATURE: US-08 — Editar Oferta (Sprint 2)
+    // Autor: Cristian Diez
+    // Fecha: 2026-10-22
+    // Descripción: Reemplazo completo de los campos editables de una oferta activa propia
+    // ============================================================
+    // Las reglas de formato (fecha futura, productoOtro obligatorio) ya las validó OfertaValidator sobre el
+    // mismo CrearOfertaRequest. id, productor, finca, fechaCreacion y activa no se modifican
+    @Transactional
+    public OfertaResponse actualizarOferta(UUID ofertaId, UUID productorId, CrearOfertaRequest request) {
+        Oferta oferta = buscarOfertaPropia(ofertaId, productorId);
+        if (!oferta.isActiva()) {
+            log.warn("Productor {} intentó editar la oferta agotada {}", productorId, ofertaId);
+            throw new ReglaNegocioException(MENSAJE_OFERTA_AGOTADA_NO_EDITABLE);
+        }
+
+        aplicarCamposEditables(oferta, request);
+
+        Oferta guardada = ofertaRepository.save(oferta);
+        log.info("Oferta {} actualizada por el productor {}", guardada.getId(), productorId);
+        return OfertaMapper.toResponse(guardada);
+    }
+
+    // Orden de chequeo: existencia (404) y luego propiedad (403)
+    private Oferta buscarOfertaPropia(UUID ofertaId, UUID productorId) {
+        Oferta oferta = ofertaRepository.findById(ofertaId)
+                .orElseThrow(() -> new ResourceNotFoundException(MENSAJE_OFERTA_NO_ENCONTRADA));
+        if (!oferta.getProductor().getId().equals(productorId)) {
+            log.warn("Productor {} intentó modificar la oferta {} de otro productor", productorId, ofertaId);
+            throw new AccesoDenegadoException(MENSAJE_OFERTA_AJENA);
+        }
+        return oferta;
+    }
+
+    // Compartido por creación (US-06) y edición (US-08) para que ambas apliquen las mismas reglas
+    private void aplicarCamposEditables(Oferta oferta, CrearOfertaRequest request) {
         oferta.setProducto(request.getProducto());
         // La BD exige producto_otro NULL cuando el producto pertenece al catálogo
         oferta.setProductoOtro(request.getProducto() == Producto.OTRO ? textoOpcional(request.getProductoOtro()) : null);
@@ -86,11 +135,6 @@ public class OfertaService {
         oferta.setFechaEstimadaCosecha(request.getEstadoCultivo() == EstadoCultivo.DISPONIBLE
                 ? null : request.getFechaEstimadaCosecha());
         oferta.setModalidadLogistica(request.getModalidadLogistica());
-        oferta.setActiva(true);
-
-        Oferta guardada = ofertaRepository.save(oferta);
-        log.info("Oferta {} publicada por el productor {}", guardada.getId(), productorId);
-        return OfertaMapper.toResponse(guardada);
     }
 
     // ============================================================

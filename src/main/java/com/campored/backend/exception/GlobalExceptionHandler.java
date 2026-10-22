@@ -54,6 +54,12 @@ public class GlobalExceptionHandler {
         return construir(HttpStatus.FORBIDDEN, "El rol del usuario no permite esta operación", request, null);
     }
 
+    // US-08 / US-09: a diferencia del handler anterior, el mensaje lo define la regla de propiedad del servicio
+    @ExceptionHandler(AccesoDenegadoException.class)
+    public ResponseEntity<ErrorResponse> handleAccesoDenegado(AccesoDenegadoException ex, HttpServletRequest request) {
+        return construir(HttpStatus.FORBIDDEN, ex.getMessage(), request, null);
+    }
+
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleResourceNotFound(ResourceNotFoundException ex,
                                                                 HttpServletRequest request) {

@@ -39,6 +39,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -80,6 +81,34 @@ public class OfertaController {
                 .buildAndExpand(oferta.getId())
                 .toUri();
         return ResponseEntity.created(ubicacion).body(oferta);
+    }
+
+    // ============================================================
+    // FEATURE: US-08 — Editar Oferta (Sprint 2)
+    // Autor: Cristian Diez
+    // Fecha: 2026-10-22
+    // Descripción: Reemplazo completo de los campos editables de una oferta activa propia
+    // ============================================================
+    // Hereda hasRole('PRODUCTOR') de la clase, igual que POST; SecurityConfig solo abre GET en /api/ofertas/{uuid}
+    @PutMapping("/{id}")
+    @Operation(summary = "Editar una oferta activa del productor autenticado",
+            description = "Reemplaza todos los campos editables con las mismas reglas de la creación. "
+                    + "No cambia el productor, la finca, la fecha de creación ni el estado de publicación. "
+                    + "Las ofertas agotadas no se pueden editar")
+    @ApiResponse(responseCode = "200", description = "Oferta actualizada")
+    @ApiResponse(responseCode = "400", description = "Datos inválidos o id que no es un UUID",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "401", description = "Token ausente, inválido o expirado", content = @Content)
+    @ApiResponse(responseCode = "403", description = "El usuario no es productor o la oferta es de otro productor",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "404", description = "La oferta no existe",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "422", description = "La oferta está agotada",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    public OfertaResponse actualizarOferta(@PathVariable UUID id,
+                                           @AuthenticationPrincipal UUID productorId,
+                                           @Valid @RequestBody CrearOfertaRequest request) {
+        return ofertaService.actualizarOferta(id, productorId, request);
     }
 
     // ============================================================
