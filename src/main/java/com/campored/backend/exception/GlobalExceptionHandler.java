@@ -57,6 +57,11 @@ public class GlobalExceptionHandler {
         return construir(HttpStatus.NOT_FOUND, ex.getMessage(), request, null);
     }
 
+    @ExceptionHandler(ReglaNegocioException.class)
+    public ResponseEntity<ErrorResponse> handleReglaNegocio(ReglaNegocioException ex, HttpServletRequest request) {
+        return construir(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), request, null);
+    }
+
     @ExceptionHandler(InvalidInputException.class)
     public ResponseEntity<ErrorResponse> handleInvalidInput(InvalidInputException ex, HttpServletRequest request) {
         return construir(HttpStatus.BAD_REQUEST, ex.getMessage(), request, null);
