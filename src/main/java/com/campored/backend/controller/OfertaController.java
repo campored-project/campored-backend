@@ -6,6 +6,7 @@
 // ============================================================
 package com.campored.backend.controller;
 
+import com.campored.backend.dto.CambiarEstadoOfertaRequest;
 import com.campored.backend.dto.CrearOfertaRequest;
 import com.campored.backend.dto.ErrorResponse;
 import com.campored.backend.dto.FiltroCatalogoOfertas;
@@ -37,6 +38,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -109,6 +111,33 @@ public class OfertaController {
                                            @AuthenticationPrincipal UUID productorId,
                                            @Valid @RequestBody CrearOfertaRequest request) {
         return ofertaService.actualizarOferta(id, productorId, request);
+    }
+
+    // ============================================================
+    // FEATURE: US-09 — Marcar Oferta como Agotada (Sprint 2)
+    // Autor: Cristian Diez
+    // Fecha: 2026-10-22
+    // Descripción: Borrado lógico de una oferta propia para retirarla del catálogo
+    // ============================================================
+    @PatchMapping("/{id}/estado")
+    @Operation(summary = "Marcar como agotada una oferta del productor autenticado",
+            description = "Borrado lógico: la oferta sale del catálogo y del detalle público de inmediato, "
+                    + "se conserva en la base de datos y sigue en mis-ofertas con estadoPublicacion AGOTADA. "
+                    + "Solo se admite AGOTADA; una oferta agotada no se puede reactivar")
+    @ApiResponse(responseCode = "200", description = "Oferta marcada como agotada")
+    @ApiResponse(responseCode = "400", description = "estadoPublicacion ausente o fuera del catálogo, o id que no es un UUID",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "401", description = "Token ausente, inválido o expirado", content = @Content)
+    @ApiResponse(responseCode = "403", description = "El usuario no es productor o la oferta es de otro productor",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "404", description = "La oferta no existe",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "422", description = "Se pidió reactivar la oferta o ya estaba agotada",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    public OfertaResponse cambiarEstado(@PathVariable UUID id,
+                                        @AuthenticationPrincipal UUID productorId,
+                                        @Valid @RequestBody CambiarEstadoOfertaRequest request) {
+        return ofertaService.cambiarEstado(id, productorId, request.getEstadoPublicacion());
     }
 
     // ============================================================

@@ -12,6 +12,7 @@ import com.campored.backend.dto.OfertaCatalogoResponse;
 import com.campored.backend.dto.OfertaDetalleResponse;
 import com.campored.backend.dto.OfertaResponse;
 import com.campored.backend.entity.EstadoCultivo;
+import com.campored.backend.entity.EstadoPublicacion;
 import com.campored.backend.entity.Finca;
 import com.campored.backend.entity.Oferta;
 import com.campored.backend.entity.Producto;
@@ -53,6 +54,9 @@ public class OfertaService {
     public static final String MENSAJE_OFERTA_AJENA = "No tienes permiso para modificar esta oferta.";
     public static final String MENSAJE_OFERTA_AGOTADA_NO_EDITABLE =
             "Las ofertas agotadas no se pueden editar. Puedes crear una nueva oferta.";
+    public static final String MENSAJE_OFERTA_NO_REACTIVABLE =
+            "Una oferta agotada no se puede reactivar. Puedes crear una nueva oferta.";
+    public static final String MENSAJE_OFERTA_YA_AGOTADA = "La oferta ya está marcada como agotada.";
     public static final int TAMANO_MAXIMO_PAGINA = 50;
 
     private static final Set<String> CAMPOS_ORDENABLES = Set.of("fechaCreacion", "precioUnitario", "fechaEstimadaCosecha");
@@ -107,6 +111,31 @@ public class OfertaService {
 
         Oferta guardada = ofertaRepository.save(oferta);
         log.info("Oferta {} actualizada por el productor {}", guardada.getId(), productorId);
+        return OfertaMapper.toResponse(guardada);
+    }
+
+    // ============================================================
+    // FEATURE: US-09 — Marcar Oferta como Agotada (Sprint 2)
+    // Autor: Cristian Diez
+    // Fecha: 2026-10-22
+    // Descripción: Borrado lógico de una oferta propia para retirarla del catálogo
+    // ============================================================
+    // No se elimina el registro: activa=false la saca del catálogo y del detalle público, y mis-ofertas
+    // la sigue mostrando como AGOTADA. El cambio es de una sola vía
+    @Transactional
+    public OfertaResponse cambiarEstado(UUID ofertaId, UUID productorId, EstadoPublicacion nuevoEstado) {
+        Oferta oferta = buscarOfertaPropia(ofertaId, productorId);
+        if (nuevoEstado != EstadoPublicacion.AGOTADA) {
+            throw new ReglaNegocioException(MENSAJE_OFERTA_NO_REACTIVABLE);
+        }
+        if (!oferta.isActiva()) {
+            throw new ReglaNegocioException(MENSAJE_OFERTA_YA_AGOTADA);
+        }
+
+        oferta.setActiva(false);
+
+        Oferta guardada = ofertaRepository.save(oferta);
+        log.info("Oferta {} marcada como agotada por el productor {}", guardada.getId(), productorId);
         return OfertaMapper.toResponse(guardada);
     }
 
