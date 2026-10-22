@@ -6,6 +6,7 @@ import com.campored.backend.dto.OfertaCatalogoResponse;
 import com.campored.backend.dto.OfertaDetalleResponse;
 import com.campored.backend.dto.OfertaResponse;
 import com.campored.backend.entity.EstadoCultivo;
+import com.campored.backend.entity.EstadoPublicacion;
 import com.campored.backend.entity.Finca;
 import com.campored.backend.entity.ModalidadLogistica;
 import com.campored.backend.entity.Municipio;
@@ -14,6 +15,7 @@ import com.campored.backend.entity.Producto;
 import com.campored.backend.entity.Rol;
 import com.campored.backend.entity.UnidadMedida;
 import com.campored.backend.entity.Usuario;
+import com.campored.backend.exception.AccesoDenegadoException;
 import com.campored.backend.exception.InvalidInputException;
 import com.campored.backend.exception.ReglaNegocioException;
 import com.campored.backend.exception.ResourceNotFoundException;
@@ -490,6 +492,176 @@ class OfertaServiceTest {
             OfertaDetalleResponse detalle = servicioConReloj(nocheEnBogota).obtenerDetalle(oferta.getId(), false);
 
             assertEquals(1, detalle.diasRestantesCosecha());
+        }
+    }
+
+    // ============================================================
+    // FEATURE: US-08 — Editar Oferta (Sprint 2)
+    // Autor: Cristian Diez
+    // Fecha: 2026-10-22
+    // Descripción: Reemplazo de campos editables, propiedad, ofertas agotadas y reglas compartidas con la creación
+    // ============================================================
+    @Nested
+    @DisplayName("Edición de oferta")
+    class EdicionDeOferta {
+
+        private Oferta ofertaPropia() {
+            Oferta oferta = ofertaGuardada(Producto.CAFE_PERGAMINO);
+            oferta.setDescripcion("Café de la cosecha anterior");
+            when(ofertaRepository.findById(oferta.getId())).thenReturn(Optional.of(oferta));
+            when(ofertaRepository.save(any(Oferta.class))).thenAnswer(invocacion -> invocacion.getArgument(0));
+            return oferta;
+        }
+
+        @Test
+        @DisplayName("Debe reemplazar los campos editables y conservar productor, finca y estado")
+        void testActualizarOfertaExitoso() {
+            Oferta oferta = ofertaPropia();
+            UUID idOriginal = oferta.getId();
+            CrearOfertaRequest request = requestBase().build();
+
+            OfertaResponse respuesta = ofertaService.actualizarOferta(idOriginal, productorId, request);
+
+            verify(ofertaRepository).save(oferta);
+            assertEquals(idOriginal, oferta.getId());
+            assertSame(productor, oferta.getProductor());
+            assertSame(finca, oferta.getFinca());
+            assertTrue(oferta.isActiva());
+            assertEquals(Producto.TOMATE_CHONTO, oferta.getProducto());
+            assertEquals("Tomate chonto de primera", oferta.getDescripcion());
+            assertEquals(new BigDecimal("250.00"), oferta.getCantidadDisponible());
+            assertEquals(UnidadMedida.KILOGRAMO, oferta.getUnidadMedida());
+            assertEquals(new BigDecimal("3500"), oferta.getPrecioUnitario());
+            assertEquals(EstadoCultivo.EN_CRECIMIENTO, oferta.getEstadoCultivo());
+            assertEquals(request.getFechaEstimadaCosecha(), oferta.getFechaEstimadaCosecha());
+            assertEquals(ModalidadLogistica.AMBAS, oferta.getModalidadLogistica());
+
+            assertEquals(idOriginal, respuesta.getId());
+            assertEquals(Producto.TOMATE_CHONTO, respuesta.getProducto());
+            assertEquals(finca.getId(), respuesta.getFincaId());
+            assertTrue(respuesta.isActiva());
+            assertEquals(EstadoPublicacion.ACTIVA, respuesta.getEstadoPublicacion());
+            verifyNoInteractions(usuarioRepository);
+        }
+
+        @Test
+        @DisplayName("Debe lanzar ResourceNotFoundException si la oferta no existe")
+        void testActualizarOfertaInexistente() {
+            UUID id = UUID.randomUUID();
+            when(ofertaRepository.findById(id)).thenReturn(Optional.empty());
+
+            ResourceNotFoundException ex = assertThrows(ResourceNotFoundException.class,
+                    () -> ofertaService.actualizarOferta(id, productorId, requestBase().build()));
+
+            assertEquals(OfertaService.MENSAJE_OFERTA_NO_ENCONTRADA, ex.getMessage());
+            verify(ofertaRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("Debe lanzar AccesoDenegadoException si la oferta es de otro productor")
+        void testActualizarOfertaAjena() {
+            Oferta oferta = ofertaPropia();
+
+            AccesoDenegadoException ex = assertThrows(AccesoDenegadoException.class,
+                    () -> ofertaService.actualizarOferta(oferta.getId(), UUID.randomUUID(), requestBase().build()));
+
+            assertEquals("No tienes permiso para modificar esta oferta.", ex.getMessage());
+            verify(ofertaRepository, never()).save(any());
+            assertEquals(Producto.CAFE_PERGAMINO, oferta.getProducto());
+        }
+
+        @Test
+        @DisplayName("Debe lanzar ReglaNegocioException con el mensaje exacto si la oferta está agotada")
+        void testActualizarOfertaAgotada() {
+            Oferta oferta = ofertaPropia();
+            oferta.setActiva(false);
+
+            ReglaNegocioException ex = assertThrows(ReglaNegocioException.class,
+                    () -> ofertaService.actualizarOferta(oferta.getId(), productorId, requestBase().build()));
+
+            assertEquals("Las ofertas agotadas no se pueden editar. Puedes crear una nueva oferta.", ex.getMessage());
+            verify(ofertaRepository, never()).save(any());
+            assertEquals(Producto.CAFE_PERGAMINO, oferta.getProducto());
+        }
+
+        @Test
+        @DisplayName("Debe validar la propiedad antes que el estado agotado")
+        void testActualizarOfertaAjenaYAgotada() {
+            Oferta oferta = ofertaPropia();
+            oferta.setActiva(false);
+
+            assertThrows(AccesoDenegadoException.class,
+                    () -> ofertaService.actualizarOferta(oferta.getId(), UUID.randomUUID(), requestBase().build()));
+        }
+
+        @Test
+        @DisplayName("Debe anular la fecha de cosecha al cambiar la oferta a DISPONIBLE")
+        void testActualizarOfertaADisponibleAnulaFecha() {
+            Oferta oferta = ofertaPropia();
+            oferta.setEstadoCultivo(EstadoCultivo.EN_CRECIMIENTO);
+            oferta.setFechaEstimadaCosecha(LocalDate.now().plusDays(10));
+            CrearOfertaRequest request = requestBase().estadoCultivo(EstadoCultivo.DISPONIBLE).build();
+
+            OfertaResponse respuesta = ofertaService.actualizarOferta(oferta.getId(), productorId, request);
+
+            assertEquals(EstadoCultivo.DISPONIBLE, oferta.getEstadoCultivo());
+            assertNull(oferta.getFechaEstimadaCosecha());
+            assertNull(respuesta.getFechaEstimadaCosecha());
+        }
+
+        @Test
+        @DisplayName("Debe guardar la nueva fecha al cambiar la oferta a EN_CRECIMIENTO")
+        void testActualizarOfertaAEnCrecimiento() {
+            Oferta oferta = ofertaPropia();
+            LocalDate nuevaFecha = LocalDate.now().plusDays(45);
+            CrearOfertaRequest request = requestBase().fechaEstimadaCosecha(nuevaFecha).build();
+
+            ofertaService.actualizarOferta(oferta.getId(), productorId, request);
+
+            assertEquals(EstadoCultivo.EN_CRECIMIENTO, oferta.getEstadoCultivo());
+            assertEquals(nuevaFecha, oferta.getFechaEstimadaCosecha());
+        }
+
+        @Test
+        @DisplayName("Debe guardar productoOtro sin espacios cuando el producto pasa a Otro")
+        void testActualizarOfertaProductoOtro() {
+            Oferta oferta = ofertaPropia();
+            CrearOfertaRequest request = requestBase().producto(Producto.OTRO).productoOtro("  Lulo  ").build();
+
+            OfertaResponse respuesta = ofertaService.actualizarOferta(oferta.getId(), productorId, request);
+
+            assertEquals(Producto.OTRO, oferta.getProducto());
+            assertEquals("Lulo", oferta.getProductoOtro());
+            assertEquals("Lulo", respuesta.getProductoOtro());
+        }
+
+        @Test
+        @DisplayName("Debe anular productoOtro cuando el producto pasa de Otro a uno del catálogo")
+        void testActualizarOfertaDescartaProductoOtro() {
+            Oferta oferta = ofertaPropia();
+            oferta.setProducto(Producto.OTRO);
+            oferta.setProductoOtro("Lulo");
+            CrearOfertaRequest request = requestBase().productoOtro("Texto que no aplica").descripcion("   ").build();
+
+            ofertaService.actualizarOferta(oferta.getId(), productorId, request);
+
+            assertEquals(Producto.TOMATE_CHONTO, oferta.getProducto());
+            assertNull(oferta.getProductoOtro());
+            assertNull(oferta.getDescripcion());
+        }
+
+        // La finca no viaja en el cuerpo: siempre es la registrada en la oferta
+        @Test
+        @DisplayName("Debe conservar la finca original de la oferta")
+        void testActualizarOfertaConservaFinca() {
+            Oferta oferta = ofertaPropia();
+            Finca otraFinca = new Finca();
+            otraFinca.setId(UUID.randomUUID());
+            productor.setFinca(otraFinca);
+
+            ofertaService.actualizarOferta(oferta.getId(), productorId, requestBase().build());
+
+            assertSame(finca, oferta.getFinca());
         }
     }
 }
