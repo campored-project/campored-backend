@@ -340,6 +340,31 @@ class OfertaControllerIntegrationTest {
     }
 
     @Test
+    @DisplayName("Debe incluir las ofertas activas e inactivas del productor, de la más reciente a la más antigua")
+    void testListarMisOfertasIncluyeInactivas() throws Exception {
+        Oferta antigua = publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+        Oferta inactiva = desactivar(publicar(productor, Producto.CILANTRO, ModalidadLogistica.AMBAS));
+        Oferta reciente = enCrecimiento(publicar(productor, Producto.MORA_CASTILLA, ModalidadLogistica.AMBAS), 10);
+        publicadaHaceHoras(antigua, 48);
+        publicadaHaceHoras(inactiva, 24);
+        publicadaHaceHoras(reciente, 1);
+        entityManager.clear();
+
+        mockMvc.perform(get(URL_MIS_OFERTAS).with(autenticadoComo(productor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].id", contains(reciente.getId().toString(),
+                        inactiva.getId().toString(), antigua.getId().toString())))
+                .andExpect(jsonPath("$[1].activa").value(false))
+                .andExpect(jsonPath("$[0].activa").value(true))
+                .andExpect(jsonPath("$[0].estadoCultivo").value("EN_CRECIMIENTO"))
+                .andExpect(jsonPath("$[0].fechaEstimadaCosecha").isNotEmpty())
+                .andExpect(jsonPath("$[0].cantidadDisponible").value(40))
+                .andExpect(jsonPath("$[0].unidadMedida").value("ARROBA"))
+                .andExpect(jsonPath("$[0].precioUnitario").value(52000))
+                .andExpect(jsonPath("$[0].productoOtro").isEmpty());
+    }
+
+    @Test
     @DisplayName("Debe devolver 200 con una lista vacía si el productor no tiene ofertas")
     void testListarMisOfertasVacia() throws Exception {
         mockMvc.perform(get(URL_MIS_OFERTAS).with(autenticadoComo(productor)))
