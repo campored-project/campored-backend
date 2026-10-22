@@ -7,6 +7,7 @@
 package com.campored.backend.dto;
 
 import com.campored.backend.entity.EstadoCultivo;
+import com.campored.backend.entity.EstadoPublicacion;
 import com.campored.backend.entity.ModalidadLogistica;
 import com.campored.backend.entity.Producto;
 import com.campored.backend.entity.UnidadMedida;
@@ -34,6 +35,9 @@ public record OfertaDetalleResponse(
         ModalidadLogistica modalidadLogistica,
         @Schema(description = "Fecha de publicación de la oferta")
         LocalDateTime fechaCreacion,
+        @Schema(description = "ACTIVA o AGOTADA, calculado desde activa. El detalle público solo muestra ofertas activas",
+                example = "ACTIVA")
+        EstadoPublicacion estadoPublicacion,
         FincaPublicaResponse finca,
         ProductorPublicoResponse productor) {
 }

@@ -12,6 +12,7 @@ import com.campored.backend.dto.OfertaDetalleResponse;
 import com.campored.backend.dto.OfertaResponse;
 import com.campored.backend.dto.ProductorPublicoResponse;
 import com.campored.backend.entity.EstadoCultivo;
+import com.campored.backend.entity.EstadoPublicacion;
 import com.campored.backend.entity.Finca;
 import com.campored.backend.entity.Oferta;
 import com.campored.backend.entity.Usuario;
@@ -38,6 +39,7 @@ public final class OfertaMapper {
                 .fechaEstimadaCosecha(oferta.getFechaEstimadaCosecha())
                 .modalidadLogistica(oferta.getModalidadLogistica())
                 .activa(oferta.isActiva())
+                .estadoPublicacion(estadoPublicacion(oferta))
                 .fechaCreacion(oferta.getFechaCreacion())
                 .fincaId(finca.getId())
                 .fincaNombre(finca.getNombreFinca())
@@ -88,8 +90,20 @@ public final class OfertaMapper {
                 diasRestantesCosecha(oferta, hoy),
                 oferta.getModalidadLogistica(),
                 oferta.getFechaCreacion(),
+                estadoPublicacion(oferta),
                 toFincaPublica(oferta.getFinca()),
                 toProductorPublico(oferta.getProductor(), incluirContacto));
+    }
+
+    // ============================================================
+    // FEATURE: US-09 — Marcar Oferta como Agotada (Sprint 2)
+    // Autor: Cristian Diez
+    // Fecha: 2026-10-22
+    // Descripción: Estado visible de una oferta, calculado a partir de la columna activa
+    // ============================================================
+    // Hoy la única forma de desactivar una oferta es marcarla como agotada (US-09)
+    public static EstadoPublicacion estadoPublicacion(Oferta oferta) {
+        return oferta.isActiva() ? EstadoPublicacion.ACTIVA : EstadoPublicacion.AGOTADA;
     }
 
     // Un canal apagado por el productor no expone su número aunque quien consulta sea comprador

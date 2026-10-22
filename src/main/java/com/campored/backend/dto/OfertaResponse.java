@@ -7,6 +7,7 @@
 package com.campored.backend.dto;
 
 import com.campored.backend.entity.EstadoCultivo;
+import com.campored.backend.entity.EstadoPublicacion;
 import com.campored.backend.entity.ModalidadLogistica;
 import com.campored.backend.entity.Municipio;
 import com.campored.backend.entity.Producto;
@@ -38,6 +39,8 @@ public class OfertaResponse {
     private LocalDate fechaEstimadaCosecha;
     private ModalidadLogistica modalidadLogistica;
     private boolean activa;
+    // US-09: calculado desde activa; el frontend lo usa para el badge "Agotado"
+    private EstadoPublicacion estadoPublicacion;
     private LocalDateTime fechaCreacion;
     private UUID fincaId;
     private String fincaNombre;
