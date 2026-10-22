@@ -9,6 +9,7 @@ package com.campored.backend.service;
 import com.campored.backend.dto.CrearOfertaRequest;
 import com.campored.backend.dto.FiltroCatalogoOfertas;
 import com.campored.backend.dto.OfertaCatalogoResponse;
+import com.campored.backend.dto.OfertaDetalleResponse;
 import com.campored.backend.dto.OfertaResponse;
 import com.campored.backend.entity.Finca;
 import com.campored.backend.entity.Oferta;
@@ -45,6 +46,7 @@ public class OfertaService {
 
     public static final String MENSAJE_PRODUCTOR_SIN_FINCA =
             "El productor debe tener una finca registrada para publicar ofertas";
+    public static final String MENSAJE_OFERTA_NO_DISPONIBLE = "La oferta no existe o no está disponible";
     public static final int TAMANO_MAXIMO_PAGINA = 50;
 
     private static final Set<String> CAMPOS_ORDENABLES = Set.of("fechaCreacion", "precioUnitario", "fechaEstimadaCosecha");
@@ -117,6 +119,20 @@ public class OfertaService {
         LocalDate hoy = LocalDate.now(clock);
         return ofertaRepository.findAll(especificacion, paginaDelCatalogo(pageable))
                 .map(oferta -> OfertaMapper.toCatalogoResponse(oferta, hoy));
+    }
+
+    // ============================================================
+    // FEATURE: US-08 — Detalle de Oferta (Sprint 2)
+    // Autor: Cristian Diez
+    // Fecha: 2026-10-22
+    // Descripción: Consulta pública de una oferta activa con su finca y productor
+    // ============================================================
+    // El mismo mensaje para inexistente e inactiva: el endpoint es anónimo y no debe revelar cuál es el caso
+    @Transactional(readOnly = true)
+    public OfertaDetalleResponse obtenerDetalle(UUID id) {
+        return ofertaRepository.findByIdAndActivaTrue(id)
+                .map(oferta -> OfertaMapper.toDetalleResponse(oferta, LocalDate.now(clock)))
+                .orElseThrow(() -> new ResourceNotFoundException(MENSAJE_OFERTA_NO_DISPONIBLE));
     }
 
     private Pageable paginaDelCatalogo(Pageable pageable) {

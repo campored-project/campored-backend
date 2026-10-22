@@ -8,10 +8,13 @@ package com.campored.backend.util;
 
 import com.campored.backend.dto.FincaPublicaResponse;
 import com.campored.backend.dto.OfertaCatalogoResponse;
+import com.campored.backend.dto.OfertaDetalleResponse;
 import com.campored.backend.dto.OfertaResponse;
+import com.campored.backend.dto.ProductorPublicoResponse;
 import com.campored.backend.entity.EstadoCultivo;
 import com.campored.backend.entity.Finca;
 import com.campored.backend.entity.Oferta;
+import com.campored.backend.entity.Usuario;
 
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
@@ -63,6 +66,31 @@ public final class OfertaMapper {
                 oferta.getModalidadLogistica(),
                 oferta.getFechaCreacion(),
                 toFincaPublica(oferta.getFinca()));
+    }
+
+    // ============================================================
+    // FEATURE: US-08 — Detalle de Oferta (Sprint 2)
+    // Autor: Cristian Diez
+    // Fecha: 2026-10-22
+    // Descripción: Consulta pública de una oferta activa con su finca y productor
+    // ============================================================
+    public static OfertaDetalleResponse toDetalleResponse(Oferta oferta, LocalDate hoy) {
+        Usuario productor = oferta.getProductor();
+        return new OfertaDetalleResponse(
+                oferta.getId(),
+                oferta.getProducto(),
+                oferta.getProductoOtro(),
+                oferta.getDescripcion(),
+                oferta.getCantidadDisponible(),
+                oferta.getUnidadMedida(),
+                oferta.getPrecioUnitario(),
+                oferta.getEstadoCultivo(),
+                oferta.getFechaEstimadaCosecha(),
+                diasRestantesCosecha(oferta, hoy),
+                oferta.getModalidadLogistica(),
+                oferta.getFechaCreacion(),
+                toFincaPublica(oferta.getFinca()),
+                new ProductorPublicoResponse(productor.getId(), productor.getNombre()));
     }
 
     // Una cosecha vencida que el productor no ha actualizado se muestra como 0, nunca negativa

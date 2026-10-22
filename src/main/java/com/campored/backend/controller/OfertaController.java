@@ -10,6 +10,7 @@ import com.campored.backend.dto.CrearOfertaRequest;
 import com.campored.backend.dto.ErrorResponse;
 import com.campored.backend.dto.FiltroCatalogoOfertas;
 import com.campored.backend.dto.OfertaCatalogoResponse;
+import com.campored.backend.dto.OfertaDetalleResponse;
 import com.campored.backend.dto.OfertaResponse;
 import com.campored.backend.entity.EstadoCultivo;
 import com.campored.backend.entity.ModalidadLogistica;
@@ -34,6 +35,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -128,6 +130,27 @@ public class OfertaController {
         FiltroCatalogoOfertas filtro = new FiltroCatalogoOfertas(
                 resolverMunicipio(municipio), estadoCultivo, producto, modalidadLogistica);
         return ofertaService.listarCatalogo(filtro, pageable);
+    }
+
+    // ============================================================
+    // FEATURE: US-08 — Detalle de Oferta (Sprint 2)
+    // Autor: Cristian Diez
+    // Fecha: 2026-10-22
+    // Descripción: Consulta pública de una oferta activa con su finca y productor
+    // ============================================================
+    @GetMapping("/{id}")
+    @PreAuthorize("permitAll()")
+    @SecurityRequirements
+    @Operation(summary = "Consultar el detalle público de una oferta activa",
+            description = "Endpoint público: no requiere token. Incluye la finca y el nombre del productor; "
+                    + "no expone correo, teléfono ni otros datos de contacto")
+    @ApiResponse(responseCode = "200", description = "Detalle de la oferta")
+    @ApiResponse(responseCode = "400", description = "El id no es un UUID válido",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "404", description = "La oferta no existe o no está disponible",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    public OfertaDetalleResponse obtenerDetalle(@PathVariable UUID id) {
+        return ofertaService.obtenerDetalle(id);
     }
 
     private Municipio resolverMunicipio(String municipio) {

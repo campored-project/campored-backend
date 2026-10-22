@@ -11,6 +11,7 @@ import org.springframework.lang.NonNull;
 import org.springframework.lang.Nullable;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface OfertaRepository extends JpaRepository<Oferta, UUID>, JpaSpecificationExecutor<Oferta> {
@@ -32,4 +33,14 @@ public interface OfertaRepository extends JpaRepository<Oferta, UUID>, JpaSpecif
             "finca", "finca.productor", "finca.productor.negocio", "productor", "productor.negocio"})
     @NonNull
     Page<Oferta> findAll(@Nullable Specification<Oferta> spec, @NonNull Pageable pageable);
+
+    // ============================================================
+    // FEATURE: US-08 — Detalle de Oferta (Sprint 2)
+    // Autor: Cristian Diez
+    // Fecha: 2026-10-22
+    // Descripción: Consulta pública de una oferta activa con su finca y productor
+    // ============================================================
+    @EntityGraph(attributePaths = {
+            "finca", "finca.productor", "finca.productor.negocio", "productor", "productor.negocio"})
+    Optional<Oferta> findByIdAndActivaTrue(UUID id);
 }
