@@ -57,6 +57,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -994,5 +995,182 @@ class OfertaControllerIntegrationTest {
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(get(urlDetalle(oferta.getId())))
                 .andExpect(status().isOk());
+    }
+
+    // ============================================================
+    // FEATURE: US-09 — Marcar Oferta como Agotada (Sprint 2)
+    // Autor: Cristian Diez
+    // Fecha: 2026-10-22
+    // Descripción: PATCH /api/ofertas/{id}/estado con JWT reales: borrado lógico, visibilidad y roles
+    // ============================================================
+    private static final String MENSAJE_NO_REACTIVABLE =
+            "Una oferta agotada no se puede reactivar. Puedes crear una nueva oferta.";
+    private static final String MENSAJE_YA_AGOTADA = "La oferta ya está marcada como agotada.";
+
+    private MockHttpServletRequestBuilder patchEstado(Object id, String cuerpo) {
+        return patch(urlDetalle(id) + "/estado")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(cuerpo);
+    }
+
+    private MockHttpServletRequestBuilder marcarAgotada(Object id) {
+        return patchEstado(id, "{\"estadoPublicacion\":\"AGOTADA\"}");
+    }
+
+    @Test
+    @DisplayName("Debe marcar la oferta como agotada, sacarla del catálogo y conservarla en mis ofertas")
+    void testMarcarComoAgotadaExitoso() throws Exception {
+        Oferta oferta = publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+        Oferta otra = publicar(productor, Producto.AGUACATE, ModalidadLogistica.AMBAS);
+
+        mockMvc.perform(marcarAgotada(oferta.getId()).with(autenticadoComo(productor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(oferta.getId().toString()))
+                .andExpect(jsonPath("$.producto").value("CAFE_PERGAMINO"))
+                .andExpect(jsonPath("$.activa").value(false))
+                .andExpect(jsonPath("$.estadoPublicacion").value("AGOTADA"));
+
+        mockMvc.perform(get(URL_OFERTAS))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[*].id", contains(otra.getId().toString())));
+        mockMvc.perform(get(URL_MIS_OFERTAS).with(autenticadoComo(productor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)))
+                .andExpect(jsonPath("$[?(@.id == '" + oferta.getId() + "')].estadoPublicacion").value("AGOTADA"))
+                .andExpect(jsonPath("$[?(@.id == '" + otra.getId() + "')].estadoPublicacion").value("ACTIVA"));
+        mockMvc.perform(get(urlDetalle(oferta.getId())))
+                .andExpect(status().isNotFound());
+
+        entityManager.flush();
+        entityManager.clear();
+        Oferta guardada = ofertaRepository.findById(oferta.getId()).orElseThrow();
+        assertFalse(guardada.isActiva());
+        assertEquals(Producto.CAFE_PERGAMINO, guardada.getProducto());
+        assertEquals(0, new BigDecimal("52000").compareTo(guardada.getPrecioUnitario()));
+        assertEquals(2, ofertaRepository.count());
+    }
+
+    @Test
+    @DisplayName("Debe devolver 401 al marcar una oferta como agotada sin token")
+    void testMarcarComoAgotadaSinToken() throws Exception {
+        Oferta oferta = publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+
+        mockMvc.perform(marcarAgotada(oferta.getId()))
+                .andExpect(status().isUnauthorized());
+
+        assertTrue(ofertaRepository.findById(oferta.getId()).orElseThrow().isActiva());
+    }
+
+    @Test
+    @DisplayName("Debe devolver 403 si un comprador intenta marcar una oferta como agotada")
+    void testMarcarComoAgotadaConTokenDeComprador() throws Exception {
+        Oferta oferta = publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+
+        mockMvc.perform(marcarAgotada(oferta.getId()).with(autenticadoComo(comprador)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403));
+
+        assertTrue(ofertaRepository.findById(oferta.getId()).orElseThrow().isActiva());
+    }
+
+    @Test
+    @DisplayName("Debe devolver 403 con mensaje si la oferta a agotar es de otro productor")
+    void testMarcarComoAgotadaDeOtroProductor() throws Exception {
+        Oferta oferta = publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+        Usuario otroProductor = usuarioRepository.save(nuevoProductor("andres@finca.com", "Finca La Palma"));
+
+        mockMvc.perform(marcarAgotada(oferta.getId()).with(autenticadoComo(otroProductor)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.mensaje").value(MENSAJE_OFERTA_AJENA));
+
+        mockMvc.perform(get(URL_OFERTAS))
+                .andExpect(jsonPath("$.content[*].id", contains(oferta.getId().toString())));
+    }
+
+    @Test
+    @DisplayName("Debe devolver 404 al marcar como agotada una oferta que no existe")
+    void testMarcarComoAgotadaInexistente() throws Exception {
+        mockMvc.perform(marcarAgotada(UUID.randomUUID()).with(autenticadoComo(productor)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.mensaje").value(OfertaService.MENSAJE_OFERTA_NO_ENCONTRADA));
+    }
+
+    @Test
+    @DisplayName("Debe devolver 400 si falta estadoPublicacion o tiene un valor fuera del catálogo")
+    void testMarcarComoAgotadaCuerpoInvalido() throws Exception {
+        Oferta oferta = publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+
+        mockMvc.perform(patchEstado(oferta.getId(), "{}").with(autenticadoComo(productor)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errores.estadoPublicacion").value("El estado de publicación es obligatorio"));
+        mockMvc.perform(patchEstado(oferta.getId(), "{\"estadoPublicacion\":\"VENDIDA\"}")
+                        .with(autenticadoComo(productor)))
+                .andExpect(status().isBadRequest());
+
+        assertTrue(ofertaRepository.findById(oferta.getId()).orElseThrow().isActiva());
+    }
+
+    @Test
+    @DisplayName("Debe devolver 422 si se pide reactivar la oferta")
+    void testMarcarComoAgotadaPideActiva() throws Exception {
+        Oferta oferta = publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+        Oferta agotada = desactivar(publicar(productor, Producto.AGUACATE, ModalidadLogistica.AMBAS));
+        String reactivar = "{\"estadoPublicacion\":\"ACTIVA\"}";
+
+        mockMvc.perform(patchEstado(oferta.getId(), reactivar).with(autenticadoComo(productor)))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.mensaje").value(MENSAJE_NO_REACTIVABLE));
+        mockMvc.perform(patchEstado(agotada.getId(), reactivar).with(autenticadoComo(productor)))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.mensaje").value(MENSAJE_NO_REACTIVABLE));
+
+        entityManager.flush();
+        entityManager.clear();
+        assertFalse(ofertaRepository.findById(agotada.getId()).orElseThrow().isActiva());
+    }
+
+    @Test
+    @DisplayName("Debe devolver 422 si la oferta ya estaba agotada")
+    void testMarcarComoAgotadaDosVeces() throws Exception {
+        Oferta oferta = publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+
+        mockMvc.perform(marcarAgotada(oferta.getId()).with(autenticadoComo(productor)))
+                .andExpect(status().isOk());
+        mockMvc.perform(marcarAgotada(oferta.getId()).with(autenticadoComo(productor)))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.status").value(422))
+                .andExpect(jsonPath("$.mensaje").value(MENSAJE_YA_AGOTADA));
+    }
+
+    @Test
+    @DisplayName("Debe rechazar con 422 la edición de una oferta después de marcarla como agotada")
+    void testEditarDespuesDeAgotar() throws Exception {
+        Oferta oferta = publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+
+        mockMvc.perform(marcarAgotada(oferta.getId()).with(autenticadoComo(productor)))
+                .andExpect(status().isOk());
+        mockMvc.perform(putJson(oferta.getId(), edicionValida()).with(autenticadoComo(productor)))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.mensaje").value(MENSAJE_AGOTADA_NO_EDITABLE));
+
+        entityManager.flush();
+        entityManager.clear();
+        assertEquals(Producto.CAFE_PERGAMINO, ofertaRepository.findById(oferta.getId()).orElseThrow().getProducto());
+    }
+
+    @Test
+    @DisplayName("Debe incluir estadoPublicacion ACTIVA en el detalle público y documentar PATCH como protegido")
+    void testEstadoPublicacionEnDetalleYOpenApi() throws Exception {
+        Oferta oferta = publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+
+        mockMvc.perform(get(urlDetalle(oferta.getId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.estadoPublicacion").value("ACTIVA"));
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paths['/api/ofertas/{id}'].put").exists())
+                .andExpect(jsonPath("$.paths['/api/ofertas/{id}'].put.security").doesNotExist())
+                .andExpect(jsonPath("$.paths['/api/ofertas/{id}/estado'].patch.security").doesNotExist());
     }
 }

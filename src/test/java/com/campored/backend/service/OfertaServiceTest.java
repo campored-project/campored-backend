@@ -664,4 +664,104 @@ class OfertaServiceTest {
             assertSame(finca, oferta.getFinca());
         }
     }
+
+    // ============================================================
+    // FEATURE: US-09 — Marcar Oferta como Agotada (Sprint 2)
+    // Autor: Cristian Diez
+    // Fecha: 2026-10-22
+    // Descripción: Borrado lógico de una oferta propia, de una sola vía
+    // ============================================================
+    @Nested
+    @DisplayName("Marcar oferta como agotada")
+    class MarcarComoAgotada {
+
+        private Oferta ofertaActiva() {
+            Oferta oferta = ofertaGuardada(Producto.CAFE_PERGAMINO);
+            when(ofertaRepository.findById(oferta.getId())).thenReturn(Optional.of(oferta));
+            when(ofertaRepository.save(any(Oferta.class))).thenAnswer(invocacion -> invocacion.getArgument(0));
+            return oferta;
+        }
+
+        @Test
+        @DisplayName("Debe desactivar la oferta sin eliminarla y responder AGOTADA")
+        void testMarcarComoAgotadaExitoso() {
+            Oferta oferta = ofertaActiva();
+
+            OfertaResponse respuesta = ofertaService.cambiarEstado(oferta.getId(), productorId, EstadoPublicacion.AGOTADA);
+
+            verify(ofertaRepository).save(oferta);
+            verify(ofertaRepository, never()).delete(any(Oferta.class));
+            verify(ofertaRepository, never()).deleteById(any());
+            assertFalse(oferta.isActiva());
+            assertEquals(Producto.CAFE_PERGAMINO, oferta.getProducto());
+            assertEquals(oferta.getId(), respuesta.getId());
+            assertFalse(respuesta.isActiva());
+            assertEquals(EstadoPublicacion.AGOTADA, respuesta.getEstadoPublicacion());
+        }
+
+        @Test
+        @DisplayName("Debe lanzar ResourceNotFoundException si la oferta no existe")
+        void testMarcarComoAgotadaInexistente() {
+            UUID id = UUID.randomUUID();
+            when(ofertaRepository.findById(id)).thenReturn(Optional.empty());
+
+            ResourceNotFoundException ex = assertThrows(ResourceNotFoundException.class,
+                    () -> ofertaService.cambiarEstado(id, productorId, EstadoPublicacion.AGOTADA));
+
+            assertEquals(OfertaService.MENSAJE_OFERTA_NO_ENCONTRADA, ex.getMessage());
+            verify(ofertaRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("Debe lanzar AccesoDenegadoException si la oferta es de otro productor")
+        void testMarcarComoAgotadaAjena() {
+            Oferta oferta = ofertaActiva();
+
+            AccesoDenegadoException ex = assertThrows(AccesoDenegadoException.class,
+                    () -> ofertaService.cambiarEstado(oferta.getId(), UUID.randomUUID(), EstadoPublicacion.AGOTADA));
+
+            assertEquals("No tienes permiso para modificar esta oferta.", ex.getMessage());
+            assertTrue(oferta.isActiva());
+            verify(ofertaRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("Debe lanzar ReglaNegocioException si se pide el estado ACTIVA")
+        void testMarcarComoAgotadaPideActiva() {
+            Oferta oferta = ofertaActiva();
+
+            ReglaNegocioException ex = assertThrows(ReglaNegocioException.class,
+                    () -> ofertaService.cambiarEstado(oferta.getId(), productorId, EstadoPublicacion.ACTIVA));
+
+            assertEquals("Una oferta agotada no se puede reactivar. Puedes crear una nueva oferta.", ex.getMessage());
+            assertTrue(oferta.isActiva());
+            verify(ofertaRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("Debe rechazar la reactivación de una oferta agotada con el mensaje de reactivación")
+        void testReactivarOfertaAgotada() {
+            Oferta oferta = ofertaActiva();
+            oferta.setActiva(false);
+
+            ReglaNegocioException ex = assertThrows(ReglaNegocioException.class,
+                    () -> ofertaService.cambiarEstado(oferta.getId(), productorId, EstadoPublicacion.ACTIVA));
+
+            assertEquals(OfertaService.MENSAJE_OFERTA_NO_REACTIVABLE, ex.getMessage());
+            assertFalse(oferta.isActiva());
+        }
+
+        @Test
+        @DisplayName("Debe lanzar ReglaNegocioException si la oferta ya estaba agotada")
+        void testMarcarComoAgotadaYaAgotada() {
+            Oferta oferta = ofertaActiva();
+            oferta.setActiva(false);
+
+            ReglaNegocioException ex = assertThrows(ReglaNegocioException.class,
+                    () -> ofertaService.cambiarEstado(oferta.getId(), productorId, EstadoPublicacion.AGOTADA));
+
+            assertEquals("La oferta ya está marcada como agotada.", ex.getMessage());
+            verify(ofertaRepository, never()).save(any());
+        }
+    }
 }
