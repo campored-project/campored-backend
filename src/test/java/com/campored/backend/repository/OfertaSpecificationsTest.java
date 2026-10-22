@@ -25,6 +25,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.test.context.ActiveProfiles;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -45,6 +46,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 // Descripción: Filtros combinables del catálogo sobre H2
 // ============================================================
 @DataJpaTest(properties = "spring.jpa.properties.hibernate.generate_statistics=true")
+@ActiveProfiles("test")
 @DisplayName("OfertaSpecifications - Filtros del catálogo público")
 class OfertaSpecificationsTest {
 
