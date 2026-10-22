@@ -164,6 +164,22 @@ class OfertaServiceTest {
     }
 
     @Test
+    @DisplayName("Debe guardar la fecha de cosecha como null cuando el producto está disponible")
+    void testCrearOfertaDisponibleDescartaFecha() {
+        CrearOfertaRequest request = requestBase().estadoCultivo(EstadoCultivo.DISPONIBLE).build();
+        when(usuarioRepository.findById(productorId)).thenReturn(Optional.of(productor));
+        simularGuardado();
+
+        OfertaResponse respuesta = ofertaService.crearOferta(productorId, request);
+
+        ArgumentCaptor<Oferta> captor = ArgumentCaptor.forClass(Oferta.class);
+        verify(ofertaRepository).save(captor.capture());
+        assertNull(captor.getValue().getFechaEstimadaCosecha());
+        assertNull(respuesta.getFechaEstimadaCosecha());
+        assertEquals(EstadoCultivo.DISPONIBLE, respuesta.getEstadoCultivo());
+    }
+
+    @Test
     @DisplayName("Debe lanzar ReglaNegocioException si el productor no tiene finca")
     void testCrearOfertaProductorSinFinca() {
         Usuario sinFinca = new Usuario();

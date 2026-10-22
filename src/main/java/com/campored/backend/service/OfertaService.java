@@ -11,6 +11,7 @@ import com.campored.backend.dto.FiltroCatalogoOfertas;
 import com.campored.backend.dto.OfertaCatalogoResponse;
 import com.campored.backend.dto.OfertaDetalleResponse;
 import com.campored.backend.dto.OfertaResponse;
+import com.campored.backend.entity.EstadoCultivo;
 import com.campored.backend.entity.Finca;
 import com.campored.backend.entity.Oferta;
 import com.campored.backend.entity.Producto;
@@ -81,7 +82,9 @@ public class OfertaService {
         oferta.setUnidadMedida(request.getUnidadMedida());
         oferta.setPrecioUnitario(request.getPrecioUnitario());
         oferta.setEstadoCultivo(request.getEstadoCultivo());
-        oferta.setFechaEstimadaCosecha(request.getFechaEstimadaCosecha());
+        // Un producto disponible no tiene cosecha pendiente; la BD exige fecha_estimada_cosecha NULL en ese caso
+        oferta.setFechaEstimadaCosecha(request.getEstadoCultivo() == EstadoCultivo.DISPONIBLE
+                ? null : request.getFechaEstimadaCosecha());
         oferta.setModalidadLogistica(request.getModalidadLogistica());
         oferta.setActiva(true);
 

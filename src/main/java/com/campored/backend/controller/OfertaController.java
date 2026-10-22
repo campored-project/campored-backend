@@ -59,7 +59,7 @@ public class OfertaController {
     @PostMapping
     @Operation(summary = "Publicar una oferta en la finca del productor autenticado",
             description = "Un cultivo EN_CRECIMIENTO requiere fecha estimada de cosecha futura; "
-                    + "uno DISPONIBLE no la admite. El producto OTRO requiere productoOtro")
+                    + "en uno DISPONIBLE se ignora y se guarda como null. El producto OTRO requiere productoOtro")
     @ApiResponse(responseCode = "201", description = "Oferta publicada; el header Location apunta al recurso")
     @ApiResponse(responseCode = "400", description = "Datos inválidos",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))

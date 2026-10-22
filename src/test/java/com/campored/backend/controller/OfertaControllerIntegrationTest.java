@@ -234,9 +234,34 @@ class OfertaControllerIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.mensaje").value("La solicitud contiene campos inválidos"))
                 .andExpect(jsonPath("$.errores.fechaEstimadaCosecha")
-                        .value(CrearOfertaRequest.MENSAJE_FECHA_COSECHA_REQUERIDA));
+                        .value("La fecha estimada de cosecha es obligatoria para productos en cultivo."));
 
         assertEquals(0, ofertaRepository.count());
+    }
+
+    @Test
+    @DisplayName("Debe devolver 400 con el mensaje BDD si el producto Otro llega solo con espacios")
+    void testCrearOfertaProductoOtroEnBlanco() throws Exception {
+        CrearOfertaRequest request = requestValido().producto(Producto.OTRO).productoOtro("   ").build();
+
+        mockMvc.perform(postJson(request).with(autenticadoComo(productor)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errores.productoOtro").value("Debes especificar el nombre del producto."));
+
+        assertEquals(0, ofertaRepository.count());
+    }
+
+    @Test
+    @DisplayName("Debe aceptar un producto disponible con fecha de cosecha y guardarla como null")
+    void testCrearOfertaDisponibleConFecha() throws Exception {
+        CrearOfertaRequest request = requestValido().estadoCultivo(EstadoCultivo.DISPONIBLE).build();
+
+        mockMvc.perform(postJson(request).with(autenticadoComo(productor)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.estadoCultivo").value("DISPONIBLE"))
+                .andExpect(jsonPath("$.fechaEstimadaCosecha").isEmpty());
+
+        assertNull(ofertaRepository.findAll().get(0).getFechaEstimadaCosecha());
     }
 
     @Test
@@ -245,7 +270,7 @@ class OfertaControllerIntegrationTest {
         mockMvc.perform(postJson(new CrearOfertaRequest()).with(autenticadoComo(productor)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errores.producto").value("El producto es obligatorio"))
-                .andExpect(jsonPath("$.errores.cantidadDisponible").value("La cantidad disponible es obligatoria"))
+                .andExpect(jsonPath("$.errores.cantidadDisponible").value("El volumen disponible es obligatorio."))
                 .andExpect(jsonPath("$.errores.unidadMedida").value("La unidad de medida es obligatoria"))
                 .andExpect(jsonPath("$.errores.precioUnitario").value("El precio unitario es obligatorio"))
                 .andExpect(jsonPath("$.errores.estadoCultivo").value("El estado del cultivo es obligatorio"))
