@@ -121,7 +121,8 @@ public class OfertaController {
             @RequestParam(required = false) String municipio,
             @Parameter(description = "EN_CRECIMIENTO o DISPONIBLE")
             @RequestParam(required = false) EstadoCultivo estadoCultivo,
-            @Parameter(description = "Producto del catálogo; OTRO agrupa los productos fuera de la lista")
+            @Parameter(description = "Producto del catálogo; incluye las ofertas OTRO cuyo nombre coincide con el producto "
+                    + "(p. ej. MORA_CASTILLA trae también OTRO \"Mora de castilla\"). OTRO devuelve solo las ofertas OTRO")
             @RequestParam(required = false) Producto producto,
             @Parameter(description = "RECOGIDA_FINCA y DESPACHO_PRODUCTOR incluyen también las ofertas AMBAS; "
                     + "AMBAS devuelve solo las ofertas que admiten las dos modalidades")

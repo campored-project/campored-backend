@@ -20,3 +20,9 @@ CREATE INDEX IF NOT EXISTS idx_ofertas_activas_modalidad_logistica
 -- Filtro por municipio: el catálogo llega a fincas por ofertas.finca_id
 CREATE INDEX IF NOT EXISTS idx_fincas_municipio
     ON fincas (municipio);
+
+-- Filtro por producto (US-13): las ofertas OTRO cuyo nombre coincide con un producto del catálogo.
+-- La expresión debe ser idéntica a la consulta, lower(trim(producto_otro)), para que PostgreSQL use el índice
+CREATE INDEX IF NOT EXISTS idx_ofertas_activas_producto_otro
+    ON ofertas (lower(trim(producto_otro)))
+    WHERE activa = true AND producto = 'OTRO';

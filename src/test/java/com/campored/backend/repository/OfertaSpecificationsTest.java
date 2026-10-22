@@ -61,11 +61,13 @@ class OfertaSpecificationsTest {
     private Oferta cafeSonsonRecogida;
     private Oferta tomateSanCarlosAmbas;
     private Oferta inactivaSanCarlos;
+    private Usuario productorSonson;
+    private Usuario productorSanCarlos;
 
     @BeforeEach
     void setUp() {
-        Usuario productorSonson = usuarioRepository.save(nuevoProductor("maria@finca.com", Municipio.SONSON));
-        Usuario productorSanCarlos = usuarioRepository.save(nuevoProductor("andres@finca.com", Municipio.SAN_CARLOS));
+        productorSonson = usuarioRepository.save(nuevoProductor("maria@finca.com", Municipio.SONSON));
+        productorSanCarlos = usuarioRepository.save(nuevoProductor("andres@finca.com", Municipio.SAN_CARLOS));
 
         tomateSonsonDespacho = guardar(productorSonson, Producto.TOMATE_CHONTO, EstadoCultivo.EN_CRECIMIENTO,
                 ModalidadLogistica.DESPACHO_PRODUCTOR, true);
@@ -224,5 +226,72 @@ class OfertaSpecificationsTest {
         assertEquals(Municipio.SONSON, activa.get().getFinca().getMunicipio());
         assertTrue(ofertaRepository.findByIdAndActivaTrue(inactivaSanCarlos.getId()).isEmpty());
         assertTrue(ofertaRepository.findByIdAndActivaTrue(UUID.randomUUID()).isEmpty());
+    }
+
+    // ============================================================
+    // FEATURE: US-13 — Filtros por Producto y Modalidad (Sprint 2)
+    // Autor: Cristian Diez
+    // Fecha: 2026-10-22
+    // Descripción: Ofertas OTRO con nombre de producto del catálogo y escenario BDD combinado
+    // ============================================================
+    private Oferta guardarOtro(Usuario productor, String nombre) {
+        Oferta oferta = guardar(productor, Producto.OTRO, EstadoCultivo.DISPONIBLE, ModalidadLogistica.AMBAS, true);
+        oferta.setProductoOtro(nombre);
+        return ofertaRepository.saveAndFlush(oferta);
+    }
+
+    @Test
+    @DisplayName("Debe incluir las ofertas OTRO cuyo nombre coincide con el producto filtrado")
+    void testConProductoIncluyeOtroConNombreCoincidente() {
+        Oferta moraCatalogo = guardar(productorSonson, Producto.MORA_CASTILLA, EstadoCultivo.DISPONIBLE,
+                ModalidadLogistica.AMBAS, true);
+        Oferta moraOtro = guardarOtro(productorSonson, "Mora de castilla");
+        Oferta moraOtroMayusculas = guardarOtro(productorSanCarlos, "  MORA DE CASTILLA ");
+        Oferta moraCodigo = guardarOtro(productorSanCarlos, "mora castilla");
+        guardarOtro(productorSonson, "Mora silvestre");
+        guardarOtro(productorSonson, "Lulo");
+
+        assertEquals(ids(moraCatalogo, moraOtro, moraOtroMayusculas, moraCodigo),
+                buscar(OfertaSpecifications.conProducto(Producto.MORA_CASTILLA)));
+    }
+
+    @Test
+    @DisplayName("Debe reconocer ofertas OTRO con el nombre del producto escrito con o sin tilde")
+    void testConProductoOtroConTilde() {
+        Oferta conTilde = guardarOtro(productorSonson, "Café Pergamino");
+        Oferta sinTilde = guardarOtro(productorSanCarlos, "cafe pergamino");
+
+        assertEquals(ids(cafeSonsonRecogida, conTilde, sinTilde),
+                buscar(OfertaSpecifications.conProducto(Producto.CAFE_PERGAMINO)));
+    }
+
+    @Test
+    @DisplayName("Debe devolver solo las ofertas OTRO al filtrar por OTRO")
+    void testConProductoOtro() {
+        Oferta lulo = guardarOtro(productorSonson, "Lulo");
+        Oferta mora = guardarOtro(productorSonson, "Mora de castilla");
+
+        assertEquals(ids(lulo, mora), buscar(OfertaSpecifications.conProducto(Producto.OTRO)));
+    }
+
+    @Test
+    @DisplayName("Escenario BDD: San Carlos + aguacate + recogida en finca incluye AMBAS y excluye despacho")
+    void testEscenarioBddMunicipioProductoModalidad() {
+        Oferta recogida = guardar(productorSanCarlos, Producto.AGUACATE, EstadoCultivo.DISPONIBLE,
+                ModalidadLogistica.RECOGIDA_FINCA, true);
+        Oferta ambas = guardar(productorSanCarlos, Producto.AGUACATE, EstadoCultivo.DISPONIBLE,
+                ModalidadLogistica.AMBAS, true);
+        guardar(productorSanCarlos, Producto.AGUACATE, EstadoCultivo.DISPONIBLE,
+                ModalidadLogistica.DESPACHO_PRODUCTOR, true);
+        guardar(productorSanCarlos, Producto.AGUACATE, EstadoCultivo.DISPONIBLE,
+                ModalidadLogistica.RECOGIDA_FINCA, false);
+        guardar(productorSonson, Producto.AGUACATE, EstadoCultivo.DISPONIBLE,
+                ModalidadLogistica.RECOGIDA_FINCA, true);
+
+        Specification<Oferta> escenario = OfertaSpecifications.conMunicipio(Municipio.SAN_CARLOS)
+                .and(OfertaSpecifications.conProducto(Producto.AGUACATE))
+                .and(OfertaSpecifications.conModalidadLogistica(ModalidadLogistica.RECOGIDA_FINCA));
+
+        assertEquals(ids(recogida, ambas), buscar(escenario));
     }
 }
