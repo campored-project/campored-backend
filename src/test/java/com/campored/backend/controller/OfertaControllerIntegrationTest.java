@@ -18,14 +18,17 @@ import com.campored.backend.repository.UsuarioRepository;
 import com.campored.backend.service.JwtService;
 import com.campored.backend.service.OfertaService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -34,16 +37,23 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.endsWith;
 import static org.hamcrest.Matchers.hasSize;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -74,6 +84,15 @@ class OfertaControllerIntegrationTest {
 
     @Autowired
     private JwtService jwtService;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private EntityManager entityManager;
+
+    @Value("${jwt.secret}")
+    private String secretoJwt;
 
     private Usuario productor;
     private Usuario comprador;
@@ -316,5 +335,301 @@ class OfertaControllerIntegrationTest {
         mockMvc.perform(get(URL_MIS_OFERTAS).with(autenticadoComo(comprador)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.status").value(403));
+    }
+
+    // ============================================================
+    // FEATURE: US-07 / US-08 — Catálogo y Detalle Públicos de Ofertas (Sprint 2)
+    // Autor: Cristian Diez
+    // Fecha: 2026-10-22
+    // Descripción: Acceso anónimo, filtros, orden, privacidad del productor y regresión de seguridad
+    // ============================================================
+    private static final String MENSAJE_OFERTA_NO_DISPONIBLE = "La oferta no existe o no está disponible";
+
+    private Usuario productorSanCarlos() {
+        Usuario usuario = nuevoProductor("andres@finca.com", "Finca La Palma");
+        usuario.setNombre("Andrés Zuluaga");
+        usuario.getFinca().setMunicipio(Municipio.SAN_CARLOS);
+        usuario.getFinca().setVereda("El Jordán");
+        return usuarioRepository.save(usuario);
+    }
+
+    private Oferta publicar(Usuario dueno, Producto producto, ModalidadLogistica modalidad) {
+        Oferta oferta = new Oferta();
+        oferta.setProductor(dueno);
+        oferta.setFinca(dueno.getFinca());
+        oferta.setProducto(producto);
+        oferta.setDescripcion("Cosecha de la semana");
+        oferta.setCantidadDisponible(new BigDecimal("40"));
+        oferta.setUnidadMedida(UnidadMedida.ARROBA);
+        oferta.setPrecioUnitario(new BigDecimal("52000"));
+        oferta.setEstadoCultivo(EstadoCultivo.DISPONIBLE);
+        oferta.setModalidadLogistica(modalidad);
+        return ofertaRepository.saveAndFlush(oferta);
+    }
+
+    private Oferta enCrecimiento(Oferta oferta, int diasParaCosecha) {
+        oferta.setEstadoCultivo(EstadoCultivo.EN_CRECIMIENTO);
+        oferta.setFechaEstimadaCosecha(LocalDate.now(OfertaValidator.ZONA_COLOMBIA).plusDays(diasParaCosecha));
+        return ofertaRepository.saveAndFlush(oferta);
+    }
+
+    private Oferta desactivar(Oferta oferta) {
+        oferta.setActiva(false);
+        return ofertaRepository.saveAndFlush(oferta);
+    }
+
+    // fecha_creacion no es actualizable desde la entidad; se fija por SQL para controlar el orden
+    private void publicadaHaceHoras(Oferta oferta, int horas) {
+        jdbcTemplate.update("UPDATE ofertas SET fecha_creacion = ? WHERE id = ?",
+                Timestamp.valueOf(LocalDateTime.now().minusHours(horas)), oferta.getId());
+    }
+
+    private String urlDetalle(Object id) {
+        return URL_OFERTAS + "/" + id;
+    }
+
+    @Test
+    @DisplayName("Debe devolver 200 con el catálogo paginado sin token")
+    void testCatalogoSinToken() throws Exception {
+        Oferta oferta = publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+
+        mockMvc.perform(get(URL_OFERTAS))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].id").value(oferta.getId().toString()))
+                .andExpect(jsonPath("$.content[0].producto").value("CAFE_PERGAMINO"))
+                .andExpect(jsonPath("$.content[0].cantidadDisponible").value(40))
+                .andExpect(jsonPath("$.content[0].precioUnitario").value(52000))
+                .andExpect(jsonPath("$.content[0].unidadMedida").value("ARROBA"))
+                .andExpect(jsonPath("$.content[0].diasRestantesCosecha").isEmpty())
+                .andExpect(jsonPath("$.content[0].fechaCreacion").isNotEmpty())
+                .andExpect(jsonPath("$.content[0].finca.nombre").value("Finca El Roble"))
+                .andExpect(jsonPath("$.content[0].finca.municipio").value("SONSON"))
+                .andExpect(jsonPath("$.content[0].productor").doesNotExist())
+                .andExpect(jsonPath("$.content[0].descripcion").doesNotExist())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.size").value(20))
+                .andExpect(jsonPath("$.number").value(0));
+    }
+
+    @Test
+    @DisplayName("Debe devolver 200 en el catálogo con token de comprador y de productor")
+    void testCatalogoConTokenDeCompradorYProductor() throws Exception {
+        publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+
+        mockMvc.perform(get(URL_OFERTAS).with(autenticadoComo(comprador)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)));
+        mockMvc.perform(get(URL_OFERTAS).with(autenticadoComo(productor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)));
+    }
+
+    @Test
+    @DisplayName("Debe devolver 200 en el catálogo aunque el token esté expirado")
+    void testCatalogoConTokenExpirado() throws Exception {
+        publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+        JwtService emisorVencido = new JwtService(secretoJwt, -Duration.ofMinutes(1).toMillis());
+
+        mockMvc.perform(get(URL_OFERTAS)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + emisorVencido.generarToken(productor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)));
+    }
+
+    @Test
+    @DisplayName("Debe filtrar por municipio sin distinguir mayúsculas")
+    void testCatalogoFiltroMunicipio() throws Exception {
+        Usuario sanCarlos = productorSanCarlos();
+        Oferta enSonson = publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+        Oferta enSanCarlos = publicar(sanCarlos, Producto.AGUACATE, ModalidadLogistica.RECOGIDA_FINCA);
+
+        mockMvc.perform(get(URL_OFERTAS).param("municipio", "sonson"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[*].id", contains(enSonson.getId().toString())));
+        mockMvc.perform(get(URL_OFERTAS).param("municipio", "San Carlos"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[*].id", contains(enSanCarlos.getId().toString())))
+                .andExpect(jsonPath("$.content[0].finca.municipio").value("SAN_CARLOS"))
+                .andExpect(jsonPath("$.content[0].finca.vereda").value("El Jordán"));
+    }
+
+    @Test
+    @DisplayName("Debe combinar filtros e incluir las ofertas AMBAS al filtrar por modalidad")
+    void testCatalogoFiltrosCombinados() throws Exception {
+        Usuario sanCarlos = productorSanCarlos();
+        Oferta tomateDespacho = enCrecimiento(
+                publicar(sanCarlos, Producto.TOMATE_CHONTO, ModalidadLogistica.DESPACHO_PRODUCTOR), 15);
+        Oferta tomateAmbas = enCrecimiento(publicar(sanCarlos, Producto.TOMATE_CHONTO, ModalidadLogistica.AMBAS), 20);
+        publicar(sanCarlos, Producto.TOMATE_CHONTO, ModalidadLogistica.RECOGIDA_FINCA);
+        publicar(sanCarlos, Producto.AGUACATE, ModalidadLogistica.DESPACHO_PRODUCTOR);
+        enCrecimiento(publicar(productor, Producto.TOMATE_CHONTO, ModalidadLogistica.DESPACHO_PRODUCTOR), 15);
+
+        mockMvc.perform(get(URL_OFERTAS)
+                        .param("municipio", "SAN_CARLOS")
+                        .param("producto", "TOMATE_CHONTO")
+                        .param("estadoCultivo", "EN_CRECIMIENTO")
+                        .param("modalidadLogistica", "DESPACHO_PRODUCTOR"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(2))
+                .andExpect(jsonPath("$.content[*].id", containsInAnyOrder(
+                        tomateDespacho.getId().toString(), tomateAmbas.getId().toString())));
+
+        mockMvc.perform(get(URL_OFERTAS).param("municipio", "SAN_CARLOS").param("modalidadLogistica", "AMBAS"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[*].id", contains(tomateAmbas.getId().toString())));
+    }
+
+    @Test
+    @DisplayName("Debe excluir las ofertas inactivas y ordenar de la más reciente a la más antigua")
+    void testCatalogoOrdenYActivas() throws Exception {
+        Oferta antigua = publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+        Oferta reciente = publicar(productor, Producto.MORA_CASTILLA, ModalidadLogistica.AMBAS);
+        Oferta intermedia = publicar(productor, Producto.CILANTRO, ModalidadLogistica.AMBAS);
+        Oferta inactiva = desactivar(publicar(productor, Producto.PLATANO, ModalidadLogistica.AMBAS));
+        publicadaHaceHoras(antigua, 48);
+        publicadaHaceHoras(reciente, 1);
+        publicadaHaceHoras(intermedia, 24);
+        publicadaHaceHoras(inactiva, 0);
+        entityManager.clear();
+
+        mockMvc.perform(get(URL_OFERTAS))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(3))
+                .andExpect(jsonPath("$.content[*].id", contains(
+                        reciente.getId().toString(), intermedia.getId().toString(), antigua.getId().toString())));
+
+        mockMvc.perform(get(URL_OFERTAS).param("sort", "fechaCreacion,asc").param("size", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalPages").value(2))
+                .andExpect(jsonPath("$.content[*].id", contains(
+                        antigua.getId().toString(), intermedia.getId().toString())));
+    }
+
+    @Test
+    @DisplayName("Debe limitar el tamaño de página a 50")
+    void testCatalogoLimitaTamano() throws Exception {
+        mockMvc.perform(get(URL_OFERTAS).param("size", "500"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.size").value(OfertaService.TAMANO_MAXIMO_PAGINA));
+    }
+
+    @Test
+    @DisplayName("Debe devolver 400 si un filtro tiene un valor fuera del catálogo")
+    void testCatalogoFiltrosInvalidos() throws Exception {
+        mockMvc.perform(get(URL_OFERTAS).param("estadoCultivo", "INVALIDO"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.mensaje", containsString("estadoCultivo")))
+                .andExpect(jsonPath("$.mensaje", containsString("EN_CRECIMIENTO, DISPONIBLE")))
+                .andExpect(jsonPath("$.ruta").value(URL_OFERTAS));
+        mockMvc.perform(get(URL_OFERTAS).param("municipio", "BOGOTA"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.mensaje").value("El municipio 'BOGOTA' no es válido"));
+        mockMvc.perform(get(URL_OFERTAS).param("modalidadLogistica", "DOMICILIO"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("Debe devolver 400 si se ordena por un campo no permitido")
+    void testCatalogoOrdenNoPermitido() throws Exception {
+        mockMvc.perform(get(URL_OFERTAS).param("sort", "productor.correo,asc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.mensaje", containsString("productor.correo")));
+    }
+
+    @Test
+    @DisplayName("Debe devolver 200 con el detalle de la oferta sin token")
+    void testDetalleSinToken() throws Exception {
+        Oferta oferta = enCrecimiento(publicar(productor, Producto.TOMATE_CHONTO, ModalidadLogistica.AMBAS), 10);
+
+        mockMvc.perform(get(urlDetalle(oferta.getId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(oferta.getId().toString()))
+                .andExpect(jsonPath("$.producto").value("TOMATE_CHONTO"))
+                .andExpect(jsonPath("$.descripcion").value("Cosecha de la semana"))
+                .andExpect(jsonPath("$.estadoCultivo").value("EN_CRECIMIENTO"))
+                .andExpect(jsonPath("$.diasRestantesCosecha").value(10))
+                .andExpect(jsonPath("$.modalidadLogistica").value("AMBAS"))
+                .andExpect(jsonPath("$.finca.id").value(productor.getFinca().getId().toString()))
+                .andExpect(jsonPath("$.finca.nombre").value("Finca El Roble"))
+                .andExpect(jsonPath("$.finca.vereda").value("La Honda"))
+                .andExpect(jsonPath("$.finca.municipio").value("SONSON"))
+                .andExpect(jsonPath("$.productor.id").value(productor.getId().toString()))
+                .andExpect(jsonPath("$.productor.nombreCompleto").value("María Gómez"));
+    }
+
+    @Test
+    @DisplayName("Debe omitir los datos sensibles del productor en el detalle")
+    void testDetalleSinDatosSensibles() throws Exception {
+        productor.setTelefono("+573001234567");
+        productor.setWhatsapp("+573001234567");
+        usuarioRepository.saveAndFlush(productor);
+        Oferta oferta = publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+
+        String cuerpo = mockMvc.perform(get(urlDetalle(oferta.getId())).with(autenticadoComo(comprador)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.productor.email").doesNotExist())
+                .andExpect(jsonPath("$.productor.correo").doesNotExist())
+                .andExpect(jsonPath("$.productor.password").doesNotExist())
+                .andExpect(jsonPath("$.productor.contrasenaHash").doesNotExist())
+                .andExpect(jsonPath("$.productor.documento").doesNotExist())
+                .andExpect(jsonPath("$.productor.telefono").doesNotExist())
+                .andExpect(jsonPath("$.productor.whatsapp").doesNotExist())
+                .andExpect(jsonPath("$.productor.rol").doesNotExist())
+                .andReturn().getResponse().getContentAsString();
+
+        assertFalse(cuerpo.contains("maria@finca.com"), "El detalle expone el correo: " + cuerpo);
+        assertFalse(cuerpo.contains("+573001234567"), "El detalle expone el teléfono: " + cuerpo);
+    }
+
+    @Test
+    @DisplayName("Debe devolver 404 si la oferta no existe o está inactiva, con el mismo mensaje")
+    void testDetalleNoDisponible() throws Exception {
+        Oferta inactiva = desactivar(publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS));
+
+        mockMvc.perform(get(urlDetalle(UUID.randomUUID())))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status").value(404))
+                .andExpect(jsonPath("$.mensaje").value(MENSAJE_OFERTA_NO_DISPONIBLE));
+        mockMvc.perform(get(urlDetalle(inactiva.getId())))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.mensaje").value(MENSAJE_OFERTA_NO_DISPONIBLE));
+    }
+
+    @Test
+    @DisplayName("Debe devolver 400 si el id no es un UUID y el usuario está autenticado")
+    void testDetalleIdInvalido() throws Exception {
+        mockMvc.perform(get(urlDetalle("no-es-un-uuid")).with(autenticadoComo(comprador)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.mensaje", containsString("'id'")));
+    }
+
+    @Test
+    @DisplayName("Debe mantener protegidas las demás rutas de ofertas sin token")
+    void testRegresionSeguridadOfertas() throws Exception {
+        Oferta oferta = publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+
+        // Solo un UUID abre el detalle anónimo; cualquier otra subruta exige token
+        mockMvc.perform(get(urlDetalle("no-es-un-uuid")))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get(URL_MIS_OFERTAS))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(postJson(requestValido().build()))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(delete(urlDetalle(oferta.getId())))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get(urlDetalle(oferta.getId())).param("origen", "catalogo"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("Debe documentar el catálogo y el detalle como endpoints sin seguridad en OpenAPI")
+    void testOpenApiEndpointsPublicos() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paths['/api/ofertas'].get.security").isEmpty())
+                .andExpect(jsonPath("$.paths['/api/ofertas/{id}'].get.security").isEmpty())
+                .andExpect(jsonPath("$.paths['/api/ofertas/mis-ofertas'].get.security").doesNotExist());
     }
 }
