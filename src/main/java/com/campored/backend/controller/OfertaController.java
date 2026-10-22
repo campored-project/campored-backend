@@ -20,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -27,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.net.URI;
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -58,5 +60,22 @@ public class OfertaController {
                 .buildAndExpand(oferta.getId())
                 .toUri();
         return ResponseEntity.created(ubicacion).body(oferta);
+    }
+
+    // ============================================================
+    // FEATURE: US-12 — Listar mis Ofertas (Sprint 2)
+    // Autor: Cristian Diez
+    // Fecha: 2026-10-22
+    // Descripción: Consulta de las ofertas publicadas por el productor autenticado
+    // ============================================================
+    @GetMapping("/mis-ofertas")
+    @Operation(summary = "Listar las ofertas del productor autenticado",
+            description = "Ordenadas de la más reciente a la más antigua. Devuelve una lista vacía si no hay ofertas")
+    @ApiResponse(responseCode = "200", description = "Ofertas del productor")
+    @ApiResponse(responseCode = "401", description = "Token ausente, inválido o expirado", content = @Content)
+    @ApiResponse(responseCode = "403", description = "El usuario autenticado no es productor",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    public List<OfertaResponse> listarMisOfertas(@AuthenticationPrincipal UUID productorId) {
+        return ofertaService.listarMisOfertas(productorId);
     }
 }

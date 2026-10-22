@@ -24,6 +24,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -65,6 +66,19 @@ public class OfertaService {
         Oferta guardada = ofertaRepository.save(oferta);
         log.info("Oferta {} publicada por el productor {}", guardada.getId(), productorId);
         return OfertaMapper.toResponse(guardada);
+    }
+
+    // ============================================================
+    // FEATURE: US-12 — Listar mis Ofertas (Sprint 2)
+    // Autor: Cristian Diez
+    // Fecha: 2026-10-22
+    // Descripción: Consulta de las ofertas publicadas por el productor autenticado
+    // ============================================================
+    @Transactional(readOnly = true)
+    public List<OfertaResponse> listarMisOfertas(UUID productorId) {
+        return ofertaRepository.findByProductorIdOrderByFechaCreacionDesc(productorId).stream()
+                .map(OfertaMapper::toResponse)
+                .toList();
     }
 
     private Usuario buscarProductor(UUID productorId) {

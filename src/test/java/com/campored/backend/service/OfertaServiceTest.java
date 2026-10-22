@@ -25,6 +25,7 @@ import org.mockito.MockitoAnnotations;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -35,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -177,5 +179,49 @@ class OfertaServiceTest {
         assertThrows(ResourceNotFoundException.class,
                 () -> ofertaService.crearOferta(productorId, requestBase().build()));
         verify(ofertaRepository, never()).save(any());
+    }
+
+    private Oferta ofertaGuardada(Producto producto) {
+        Oferta oferta = new Oferta();
+        oferta.setId(UUID.randomUUID());
+        oferta.setProductor(productor);
+        oferta.setFinca(finca);
+        oferta.setProducto(producto);
+        oferta.setCantidadDisponible(new BigDecimal("40"));
+        oferta.setUnidadMedida(UnidadMedida.ARROBA);
+        oferta.setPrecioUnitario(new BigDecimal("52000"));
+        oferta.setEstadoCultivo(EstadoCultivo.DISPONIBLE);
+        oferta.setModalidadLogistica(ModalidadLogistica.DESPACHO_PRODUCTOR);
+        return oferta;
+    }
+
+    @Test
+    @DisplayName("Debe listar las ofertas del productor mapeadas y en el orden del repositorio")
+    void testListarMisOfertas() {
+        Oferta reciente = ofertaGuardada(Producto.CAFE_PERGAMINO);
+        Oferta antigua = ofertaGuardada(Producto.MORA_CASTILLA);
+        when(ofertaRepository.findByProductorIdOrderByFechaCreacionDesc(productorId))
+                .thenReturn(List.of(reciente, antigua));
+
+        List<OfertaResponse> respuesta = ofertaService.listarMisOfertas(productorId);
+
+        assertEquals(2, respuesta.size());
+        assertEquals(reciente.getId(), respuesta.get(0).getId());
+        assertEquals(Producto.CAFE_PERGAMINO, respuesta.get(0).getProducto());
+        assertEquals(UnidadMedida.ARROBA, respuesta.get(0).getUnidadMedida());
+        assertEquals("Finca El Roble", respuesta.get(0).getFincaNombre());
+        assertEquals(Municipio.SONSON, respuesta.get(0).getMunicipio());
+        assertEquals(antigua.getId(), respuesta.get(1).getId());
+        verifyNoInteractions(usuarioRepository);
+    }
+
+    @Test
+    @DisplayName("Debe devolver una lista vacía si el productor no tiene ofertas")
+    void testListarMisOfertasSinOfertas() {
+        when(ofertaRepository.findByProductorIdOrderByFechaCreacionDesc(productorId)).thenReturn(List.of());
+
+        List<OfertaResponse> respuesta = ofertaService.listarMisOfertas(productorId);
+
+        assertTrue(respuesta.isEmpty());
     }
 }

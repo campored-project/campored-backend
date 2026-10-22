@@ -40,9 +40,11 @@ import java.util.UUID;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.endsWith;
+import static org.hamcrest.Matchers.hasSize;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -56,6 +58,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class OfertaControllerIntegrationTest {
 
     private static final String URL_OFERTAS = "/api/ofertas";
+    private static final String URL_MIS_OFERTAS = "/api/ofertas/mis-ofertas";
 
     @Autowired
     private MockMvc mockMvc;
@@ -258,5 +261,60 @@ class OfertaControllerIntegrationTest {
                 .andExpect(jsonPath("$.ruta", endsWith(URL_OFERTAS)));
 
         assertEquals(0, ofertaRepository.count());
+    }
+
+    private Oferta nuevaOferta(Usuario dueno, Producto producto) {
+        Oferta oferta = new Oferta();
+        oferta.setProductor(dueno);
+        oferta.setFinca(dueno.getFinca());
+        oferta.setProducto(producto);
+        oferta.setCantidadDisponible(new BigDecimal("40"));
+        oferta.setUnidadMedida(UnidadMedida.ARROBA);
+        oferta.setPrecioUnitario(new BigDecimal("52000"));
+        oferta.setEstadoCultivo(EstadoCultivo.DISPONIBLE);
+        oferta.setModalidadLogistica(ModalidadLogistica.DESPACHO_PRODUCTOR);
+        return ofertaRepository.save(oferta);
+    }
+
+    @Test
+    @DisplayName("Debe listar solo las ofertas del productor autenticado y devolver 200")
+    void testListarMisOfertas() throws Exception {
+        Usuario otroProductor = usuarioRepository.save(nuevoProductor("andres@finca.com", "Finca La Palma"));
+        Oferta propia = nuevaOferta(productor, Producto.CAFE_PERGAMINO);
+        nuevaOferta(otroProductor, Producto.AGUACATE);
+
+        mockMvc.perform(get(URL_MIS_OFERTAS).with(autenticadoComo(productor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].id").value(propia.getId().toString()))
+                .andExpect(jsonPath("$[0].producto").value("CAFE_PERGAMINO"))
+                .andExpect(jsonPath("$[0].unidadMedida").value("ARROBA"))
+                .andExpect(jsonPath("$[0].precioUnitario").value(52000))
+                .andExpect(jsonPath("$[0].fincaNombre").value("Finca El Roble"))
+                .andExpect(jsonPath("$[0].municipio").value("SONSON"))
+                .andExpect(jsonPath("$[0].productor").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("Debe devolver 200 con una lista vacía si el productor no tiene ofertas")
+    void testListarMisOfertasVacia() throws Exception {
+        mockMvc.perform(get(URL_MIS_OFERTAS).with(autenticadoComo(productor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(0)));
+    }
+
+    @Test
+    @DisplayName("Debe devolver 401 al listar ofertas sin token")
+    void testListarMisOfertasSinToken() throws Exception {
+        mockMvc.perform(get(URL_MIS_OFERTAS))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("Debe devolver 403 si un comprador intenta listar ofertas de productor")
+    void testListarMisOfertasConTokenDeComprador() throws Exception {
+        mockMvc.perform(get(URL_MIS_OFERTAS).with(autenticadoComo(comprador)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403));
     }
 }
