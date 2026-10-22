@@ -7,24 +7,38 @@
 package com.campored.backend.service;
 
 import com.campored.backend.dto.CrearOfertaRequest;
+import com.campored.backend.dto.FiltroCatalogoOfertas;
+import com.campored.backend.dto.OfertaCatalogoResponse;
+import com.campored.backend.dto.OfertaDetalleResponse;
 import com.campored.backend.dto.OfertaResponse;
+import com.campored.backend.entity.EstadoCultivo;
 import com.campored.backend.entity.Finca;
 import com.campored.backend.entity.Oferta;
 import com.campored.backend.entity.Producto;
 import com.campored.backend.entity.Rol;
 import com.campored.backend.entity.Usuario;
+import com.campored.backend.exception.InvalidInputException;
 import com.campored.backend.exception.ReglaNegocioException;
 import com.campored.backend.exception.ResourceNotFoundException;
 import com.campored.backend.repository.OfertaRepository;
+import com.campored.backend.repository.OfertaSpecifications;
 import com.campored.backend.repository.UsuarioRepository;
 import com.campored.backend.util.OfertaMapper;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -33,11 +47,20 @@ public class OfertaService {
 
     public static final String MENSAJE_PRODUCTOR_SIN_FINCA =
             "El productor debe tener una finca registrada para publicar ofertas";
+    public static final String MENSAJE_OFERTA_NO_DISPONIBLE = "La oferta no existe o no está disponible";
+    public static final int TAMANO_MAXIMO_PAGINA = 50;
+
+    private static final Set<String> CAMPOS_ORDENABLES = Set.of("fechaCreacion", "precioUnitario", "fechaEstimadaCosecha");
+
+    private static final Sort ORDEN_POR_DEFECTO = Sort.by(Sort.Direction.DESC, "fechaCreacion");
+    // Desempate estable: sin él, ofertas con el mismo precio o fecha pueden repetirse entre páginas
+    private static final Sort DESEMPATE = Sort.by(Sort.Direction.ASC, "id");
 
     private static final Logger log = LoggerFactory.getLogger(OfertaService.class);
 
     private final OfertaRepository ofertaRepository;
     private final UsuarioRepository usuarioRepository;
+    private final Clock clock;
 
     @Transactional
     public OfertaResponse crearOferta(UUID productorId, CrearOfertaRequest request) {
@@ -59,7 +82,9 @@ public class OfertaService {
         oferta.setUnidadMedida(request.getUnidadMedida());
         oferta.setPrecioUnitario(request.getPrecioUnitario());
         oferta.setEstadoCultivo(request.getEstadoCultivo());
-        oferta.setFechaEstimadaCosecha(request.getFechaEstimadaCosecha());
+        // Un producto disponible no tiene cosecha pendiente; la BD exige fecha_estimada_cosecha NULL en ese caso
+        oferta.setFechaEstimadaCosecha(request.getEstadoCultivo() == EstadoCultivo.DISPONIBLE
+                ? null : request.getFechaEstimadaCosecha());
         oferta.setModalidadLogistica(request.getModalidadLogistica());
         oferta.setActiva(true);
 
@@ -79,6 +104,56 @@ public class OfertaService {
         return ofertaRepository.findByProductorIdOrderByFechaCreacionDesc(productorId).stream()
                 .map(OfertaMapper::toResponse)
                 .toList();
+    }
+
+    // ============================================================
+    // FEATURE: US-11 / US-13 — Catálogo Público de Ofertas (Sprint 2)
+    // Autor: Cristian Diez
+    // Fecha: 2026-10-22
+    // Descripción: Consulta paginada de ofertas activas con filtros combinables
+    // ============================================================
+    @Transactional(readOnly = true)
+    public Page<OfertaCatalogoResponse> listarCatalogo(FiltroCatalogoOfertas filtro, Pageable pageable) {
+        Specification<Oferta> especificacion = Specification.where(OfertaSpecifications.activas())
+                .and(OfertaSpecifications.conMunicipio(filtro.municipio()))
+                .and(OfertaSpecifications.conEstadoCultivo(filtro.estadoCultivo()))
+                .and(OfertaSpecifications.conProducto(filtro.producto()))
+                .and(OfertaSpecifications.conModalidadLogistica(filtro.modalidadLogistica()));
+        LocalDate hoy = LocalDate.now(clock);
+        return ofertaRepository.findAll(especificacion, paginaDelCatalogo(pageable))
+                .map(oferta -> OfertaMapper.toCatalogoResponse(oferta, hoy));
+    }
+
+    // ============================================================
+    // FEATURE: US-12 — Detalle de Oferta (Sprint 2)
+    // Autor: Cristian Diez
+    // Fecha: 2026-10-22
+    // Descripción: Consulta pública de una oferta activa con su finca y productor
+    // ============================================================
+    // El mismo mensaje para inexistente e inactiva: el endpoint es anónimo y no debe revelar cuál es el caso.
+    // esComprador lo resuelve el controlador: los números de contacto solo se entregan a compradores
+    @Transactional(readOnly = true)
+    public OfertaDetalleResponse obtenerDetalle(UUID id, boolean esComprador) {
+        return ofertaRepository.findByIdAndActivaTrue(id)
+                .map(oferta -> OfertaMapper.toDetalleResponse(oferta, LocalDate.now(clock), esComprador))
+                .orElseThrow(() -> new ResourceNotFoundException(MENSAJE_OFERTA_NO_DISPONIBLE));
+    }
+
+    private Pageable paginaDelCatalogo(Pageable pageable) {
+        Sort orden = pageable.getSort().isSorted() ? validarOrden(pageable.getSort()) : ORDEN_POR_DEFECTO;
+        int tamano = Math.min(pageable.getPageSize(), TAMANO_MAXIMO_PAGINA);
+        return PageRequest.of(pageable.getPageNumber(), tamano, orden.and(DESEMPATE));
+    }
+
+    private Sort validarOrden(Sort orden) {
+        orden.stream()
+                .filter(criterio -> !CAMPOS_ORDENABLES.contains(criterio.getProperty()))
+                .findFirst()
+                .ifPresent(criterio -> {
+                    throw new InvalidInputException("No se puede ordenar por '" + criterio.getProperty()
+                            + "'. Campos permitidos: fechaCreacion, precioUnitario, fechaEstimadaCosecha");
+                });
+        return orden;
     }
 
     private Usuario buscarProductor(UUID productorId) {

@@ -33,13 +33,11 @@ import java.time.LocalDate;
 public class CrearOfertaRequest {
 
     public static final String MENSAJE_FECHA_COSECHA_REQUERIDA =
-            "La fecha estimada de cosecha es obligatoria para un cultivo en crecimiento";
+            "La fecha estimada de cosecha es obligatoria para productos en cultivo.";
     public static final String MENSAJE_FECHA_COSECHA_FUTURA =
             "La fecha estimada de cosecha debe ser posterior a hoy";
-    public static final String MENSAJE_FECHA_COSECHA_NO_APLICA =
-            "Un producto disponible no lleva fecha estimada de cosecha";
-    public static final String MENSAJE_PRODUCTO_OTRO_REQUERIDO =
-            "Describa el producto cuando selecciona la opción Otro";
+    public static final String MENSAJE_PRODUCTO_OTRO_REQUERIDO = "Debes especificar el nombre del producto.";
+    public static final String MENSAJE_CANTIDAD_REQUERIDA = "El volumen disponible es obligatorio.";
 
     @Schema(example = "TOMATE_CHONTO")
     @NotNull(message = "El producto es obligatorio")
@@ -54,7 +52,7 @@ public class CrearOfertaRequest {
     private String descripcion;
 
     @Schema(example = "250.00")
-    @NotNull(message = "La cantidad disponible es obligatoria")
+    @NotNull(message = MENSAJE_CANTIDAD_REQUERIDA)
     @DecimalMin(value = "0.01", message = "La cantidad disponible debe ser mayor que cero")
     @Digits(integer = 10, fraction = 2, message = "La cantidad admite hasta 10 enteros y 2 decimales")
     private BigDecimal cantidadDisponible;
@@ -73,7 +71,7 @@ public class CrearOfertaRequest {
     @NotNull(message = "El estado del cultivo es obligatorio")
     private EstadoCultivo estadoCultivo;
 
-    @Schema(example = "2026-12-15", description = "Obligatoria si el cultivo está EN_CRECIMIENTO; nula si está DISPONIBLE")
+    @Schema(example = "2026-12-15", description = "Obligatoria si el cultivo está EN_CRECIMIENTO; si está DISPONIBLE se ignora y se guarda como null")
     private LocalDate fechaEstimadaCosecha;
 
     @Schema(example = "AMBAS")

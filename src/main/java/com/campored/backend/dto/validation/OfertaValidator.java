@@ -41,9 +41,6 @@ public class OfertaValidator implements ConstraintValidator<OfertaValida, CrearO
                 return rechazar(context, "fechaEstimadaCosecha", CrearOfertaRequest.MENSAJE_FECHA_COSECHA_FUTURA);
             }
         }
-        if (request.getEstadoCultivo() == EstadoCultivo.DISPONIBLE && fecha != null) {
-            return rechazar(context, "fechaEstimadaCosecha", CrearOfertaRequest.MENSAJE_FECHA_COSECHA_NO_APLICA);
-        }
         return true;
     }
 

@@ -16,6 +16,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.util.matcher.RegexRequestMatcher;
 
 @Configuration
 @EnableWebSecurity
@@ -31,6 +32,10 @@ public class SecurityConfig {
             "/error"
     };
 
+    // Solo un UUID abre el detalle público: /api/ofertas/mis-ofertas y futuras subrutas siguen protegidas.
+    // RegexRequestMatcher evalúa también la query string, por eso se admite un "?..." opcional
+    private static final String PATRON_DETALLE_OFERTA = "^/api/ofertas/[0-9a-fA-F-]{36}(\\?.*)?$";
+
     private final JwtAuthFilter jwtAuthFilter;
 
     @Bean
@@ -43,6 +48,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(RUTAS_PUBLICAS).permitAll()
                         .requestMatchers("/api/usuarios/**").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/ofertas").permitAll()
+                        .requestMatchers(RegexRequestMatcher.regexMatcher(HttpMethod.GET, PATRON_DETALLE_OFERTA)).permitAll()
                         .requestMatchers("/api/ofertas/**").authenticated()
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))

@@ -136,14 +136,28 @@ class OfertaValidatorTest {
     }
 
     @Test
-    @DisplayName("Debe rechazar un producto disponible con fecha de cosecha")
+    @DisplayName("Debe aceptar un producto disponible con fecha de cosecha: el servicio la descarta")
     void testDisponibleConFecha() {
         CrearOfertaRequest request = requestBase()
                 .estadoCultivo(EstadoCultivo.DISPONIBLE)
                 .fechaEstimadaCosecha(hoy().plusDays(10))
                 .build();
 
-        assertUnicoError(request, "fechaEstimadaCosecha", CrearOfertaRequest.MENSAJE_FECHA_COSECHA_NO_APLICA);
+        assertTrue(validator.validate(request).isEmpty());
+    }
+
+    @Test
+    @DisplayName("Debe usar los mensajes literales de los criterios BDD de US-06")
+    void testMensajesBdd() {
+        assertEquals("La fecha estimada de cosecha es obligatoria para productos en cultivo.",
+                CrearOfertaRequest.MENSAJE_FECHA_COSECHA_REQUERIDA);
+        assertEquals("Debes especificar el nombre del producto.", CrearOfertaRequest.MENSAJE_PRODUCTO_OTRO_REQUERIDO);
+
+        Set<ConstraintViolation<CrearOfertaRequest>> violaciones = validator.validate(
+                requestBase().cantidadDisponible(null).estadoCultivo(EstadoCultivo.DISPONIBLE).build());
+
+        assertEquals(1, violaciones.size());
+        assertEquals("El volumen disponible es obligatorio.", violaciones.iterator().next().getMessage());
     }
 
     @Test
