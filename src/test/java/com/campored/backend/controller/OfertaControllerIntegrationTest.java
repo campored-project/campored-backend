@@ -338,7 +338,7 @@ class OfertaControllerIntegrationTest {
     }
 
     // ============================================================
-    // FEATURE: US-07 / US-08 — Catálogo y Detalle Públicos de Ofertas (Sprint 2)
+    // FEATURE: US-11 / US-12 / US-13 — Catálogo y Detalle Públicos de Ofertas (Sprint 2)
     // Autor: Cristian Diez
     // Fecha: 2026-10-22
     // Descripción: Acceso anónimo, filtros, orden, privacidad del productor y regresión de seguridad

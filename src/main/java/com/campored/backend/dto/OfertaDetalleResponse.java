@@ -1,5 +1,5 @@
 // ============================================================
-// FEATURE: US-08 — Detalle de Oferta (Sprint 2)
+// FEATURE: US-12 — Detalle de Oferta (Sprint 2)
 // Autor: Cristian Diez
 // Fecha: 2026-10-22
 // Descripción: Consulta pública de una oferta activa con su finca y productor

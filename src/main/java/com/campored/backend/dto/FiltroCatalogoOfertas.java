@@ -1,5 +1,5 @@
 // ============================================================
-// FEATURE: US-07 — Catálogo Público de Ofertas (Sprint 2)
+// FEATURE: US-11 / US-13 — Catálogo Público de Ofertas (Sprint 2)
 // Autor: Cristian Diez
 // Fecha: 2026-10-22
 // Descripción: Consulta paginada de ofertas activas con filtros combinables

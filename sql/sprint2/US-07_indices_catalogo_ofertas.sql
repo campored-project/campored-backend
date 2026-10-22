@@ -1,4 +1,4 @@
--- US-07 / US-08 — Índices para el catálogo público de ofertas (Sprint 2)
+-- US-11 / US-13 — Índices para el catálogo público de ofertas (Sprint 2)
 -- Ejecutar manualmente en Supabase SQL Editor: producción usa ddl-auto=validate y Hibernate no crea índices.
 -- IF NOT EXISTS permite ejecutarlo de nuevo sin error.
 -- Ya existen (US-06): idx_ofertas_finca_id, idx_ofertas_productor_id e idx_ofertas_activa_estado,

@@ -39,7 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 // ============================================================
-// FEATURE: US-07 — Catálogo Público de Ofertas (Sprint 2)
+// FEATURE: US-11 / US-13 — Catálogo Público de Ofertas (Sprint 2)
 // Autor: Cristian Diez
 // Fecha: 2026-10-22
 // Descripción: Filtros combinables del catálogo sobre H2

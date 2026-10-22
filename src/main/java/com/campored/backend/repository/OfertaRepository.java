@@ -21,7 +21,7 @@ public interface OfertaRepository extends JpaRepository<Oferta, UUID>, JpaSpecif
     List<Oferta> findByProductorIdOrderByFechaCreacionDesc(UUID productorId);
 
     // ============================================================
-    // FEATURE: US-07 — Catálogo Público de Ofertas (Sprint 2)
+    // FEATURE: US-11 / US-13 — Catálogo Público de Ofertas (Sprint 2)
     // Autor: Cristian Diez
     // Fecha: 2026-10-22
     // Descripción: Consulta paginada de ofertas activas con filtros combinables
@@ -35,7 +35,7 @@ public interface OfertaRepository extends JpaRepository<Oferta, UUID>, JpaSpecif
     Page<Oferta> findAll(@Nullable Specification<Oferta> spec, @NonNull Pageable pageable);
 
     // ============================================================
-    // FEATURE: US-08 — Detalle de Oferta (Sprint 2)
+    // FEATURE: US-12 — Detalle de Oferta (Sprint 2)
     // Autor: Cristian Diez
     // Fecha: 2026-10-22
     // Descripción: Consulta pública de una oferta activa con su finca y productor
