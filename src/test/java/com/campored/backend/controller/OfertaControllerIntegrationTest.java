@@ -609,16 +609,26 @@ class OfertaControllerIntegrationTest {
                 .andExpect(jsonPath("$.productor.nombreCompleto").value("María Gómez"));
     }
 
-    @Test
-    @DisplayName("Debe omitir los datos sensibles del productor en el detalle")
-    void testDetalleSinDatosSensibles() throws Exception {
+    private Oferta ofertaDeProductorContactable() {
         productor.setTelefono("+573001234567");
-        productor.setWhatsapp("+573001234567");
+        productor.setWhatsapp("+573109876543");
+        productor.setCanalLlamadaHabilitado(true);
+        productor.setCanalWhatsappHabilitado(true);
         usuarioRepository.saveAndFlush(productor);
-        Oferta oferta = publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+        return publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+    }
 
-        String cuerpo = mockMvc.perform(get(urlDetalle(oferta.getId())).with(autenticadoComo(comprador)))
+    @Test
+    @DisplayName("Debe omitir los datos sensibles y los números del productor para un visitante anónimo")
+    void testDetalleSinDatosSensibles() throws Exception {
+        Oferta oferta = ofertaDeProductorContactable();
+
+        String cuerpo = mockMvc.perform(get(urlDetalle(oferta.getId())))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.productor.whatsappDisponible").value(true))
+                .andExpect(jsonPath("$.productor.llamadaDisponible").value(true))
+                .andExpect(jsonPath("$.productor.telefonoContacto").isEmpty())
+                .andExpect(jsonPath("$.productor.whatsappContacto").isEmpty())
                 .andExpect(jsonPath("$.productor.email").doesNotExist())
                 .andExpect(jsonPath("$.productor.correo").doesNotExist())
                 .andExpect(jsonPath("$.productor.password").doesNotExist())
@@ -631,6 +641,66 @@ class OfertaControllerIntegrationTest {
 
         assertFalse(cuerpo.contains("maria@finca.com"), "El detalle expone el correo: " + cuerpo);
         assertFalse(cuerpo.contains("+573001234567"), "El detalle expone el teléfono: " + cuerpo);
+        assertFalse(cuerpo.contains("+573109876543"), "El detalle expone el WhatsApp: " + cuerpo);
+    }
+
+    @Test
+    @DisplayName("Debe entregar los números de contacto a un comprador autenticado")
+    void testDetalleContactoParaComprador() throws Exception {
+        Oferta oferta = ofertaDeProductorContactable();
+
+        String cuerpo = mockMvc.perform(get(urlDetalle(oferta.getId())).with(autenticadoComo(comprador)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.productor.telefonoContacto").value("+573001234567"))
+                .andExpect(jsonPath("$.productor.whatsappContacto").value("+573109876543"))
+                .andExpect(jsonPath("$.productor.correo").doesNotExist())
+                .andReturn().getResponse().getContentAsString();
+
+        assertFalse(cuerpo.contains("maria@finca.com"), "El detalle expone el correo: " + cuerpo);
+    }
+
+    @Test
+    @DisplayName("No debe entregar los números de contacto a un productor autenticado")
+    void testDetalleSinContactoParaProductor() throws Exception {
+        Oferta oferta = ofertaDeProductorContactable();
+        Usuario otroProductor = usuarioRepository.save(nuevoProductor("andres@finca.com", "Finca La Palma"));
+
+        mockMvc.perform(get(urlDetalle(oferta.getId())).with(autenticadoComo(otroProductor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.productor.llamadaDisponible").value(true))
+                .andExpect(jsonPath("$.productor.telefonoContacto").isEmpty())
+                .andExpect(jsonPath("$.productor.whatsappContacto").isEmpty());
+        mockMvc.perform(get(urlDetalle(oferta.getId())).with(autenticadoComo(productor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.productor.telefonoContacto").isEmpty());
+    }
+
+    @Test
+    @DisplayName("Debe marcar WhatsApp como no disponible si el canal está habilitado pero sin número")
+    void testDetalleWhatsappHabilitadoSinNumero() throws Exception {
+        productor.setCanalWhatsappHabilitado(true);
+        usuarioRepository.saveAndFlush(productor);
+        Oferta oferta = publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+
+        mockMvc.perform(get(urlDetalle(oferta.getId())).with(autenticadoComo(comprador)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.productor.whatsappDisponible").value(false))
+                .andExpect(jsonPath("$.productor.llamadaDisponible").value(false))
+                .andExpect(jsonPath("$.productor.whatsappContacto").isEmpty());
+    }
+
+    @Test
+    @DisplayName("No debe exponer números de contacto en el catálogo, ni siquiera a compradores")
+    void testCatalogoSinDatosDeContacto() throws Exception {
+        ofertaDeProductorContactable();
+
+        String cuerpo = mockMvc.perform(get(URL_OFERTAS).with(autenticadoComo(comprador)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].productor").doesNotExist())
+                .andReturn().getResponse().getContentAsString();
+
+        assertFalse(cuerpo.contains("+573001234567") || cuerpo.contains("+573109876543"),
+                "El catálogo expone datos de contacto: " + cuerpo);
     }
 
     @Test

@@ -74,8 +74,7 @@ public final class OfertaMapper {
     // Fecha: 2026-10-22
     // Descripción: Consulta pública de una oferta activa con su finca y productor
     // ============================================================
-    public static OfertaDetalleResponse toDetalleResponse(Oferta oferta, LocalDate hoy) {
-        Usuario productor = oferta.getProductor();
+    public static OfertaDetalleResponse toDetalleResponse(Oferta oferta, LocalDate hoy, boolean incluirContacto) {
         return new OfertaDetalleResponse(
                 oferta.getId(),
                 oferta.getProducto(),
@@ -90,7 +89,24 @@ public final class OfertaMapper {
                 oferta.getModalidadLogistica(),
                 oferta.getFechaCreacion(),
                 toFincaPublica(oferta.getFinca()),
-                new ProductorPublicoResponse(productor.getId(), productor.getNombre()));
+                toProductorPublico(oferta.getProductor(), incluirContacto));
+    }
+
+    // Un canal apagado por el productor no expone su número aunque quien consulta sea comprador
+    private static ProductorPublicoResponse toProductorPublico(Usuario productor, boolean incluirContacto) {
+        boolean whatsappDisponible = productor.isCanalWhatsappHabilitado() && tieneTexto(productor.getWhatsapp());
+        boolean llamadaDisponible = productor.isCanalLlamadaHabilitado() && tieneTexto(productor.getTelefono());
+        return new ProductorPublicoResponse(
+                productor.getId(),
+                productor.getNombre(),
+                whatsappDisponible,
+                llamadaDisponible,
+                incluirContacto && llamadaDisponible ? productor.getTelefono() : null,
+                incluirContacto && whatsappDisponible ? productor.getWhatsapp() : null);
+    }
+
+    private static boolean tieneTexto(String valor) {
+        return valor != null && !valor.isBlank();
     }
 
     // Una cosecha vencida que el productor no ha actualizado se muestra como 0, nunca negativa

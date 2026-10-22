@@ -372,7 +372,7 @@ class OfertaServiceTest {
             oferta.setDescripcion("Tomate chonto de primera");
             when(ofertaRepository.findByIdAndActivaTrue(oferta.getId())).thenReturn(Optional.of(oferta));
 
-            OfertaDetalleResponse detalle = servicioConReloj(AHORA).obtenerDetalle(oferta.getId());
+            OfertaDetalleResponse detalle = servicioConReloj(AHORA).obtenerDetalle(oferta.getId(), false);
 
             assertEquals(oferta.getId(), detalle.id());
             assertEquals("Tomate chonto de primera", detalle.descripcion());
@@ -386,6 +386,57 @@ class OfertaServiceTest {
             assertEquals(10, detalle.diasRestantesCosecha());
         }
 
+        private OfertaDetalleResponse detalleConCanales(boolean whatsapp, boolean llamada, boolean esComprador) {
+            productor.setTelefono("+573001234567");
+            productor.setWhatsapp("+573109876543");
+            productor.setCanalWhatsappHabilitado(whatsapp);
+            productor.setCanalLlamadaHabilitado(llamada);
+            Oferta oferta = ofertaGuardada(Producto.CAFE_PERGAMINO);
+            when(ofertaRepository.findByIdAndActivaTrue(oferta.getId())).thenReturn(Optional.of(oferta));
+            return servicioConReloj(AHORA).obtenerDetalle(oferta.getId(), esComprador);
+        }
+
+        @Test
+        @DisplayName("Debe entregar los números de contacto solo a un comprador")
+        void testDetalleContactoParaComprador() {
+            assertEquals("+573001234567", detalleConCanales(true, true, true).productor().telefonoContacto());
+            assertEquals("+573109876543", detalleConCanales(true, true, true).productor().whatsappContacto());
+
+            OfertaDetalleResponse paraOtros = detalleConCanales(true, true, false);
+            assertTrue(paraOtros.productor().whatsappDisponible());
+            assertTrue(paraOtros.productor().llamadaDisponible());
+            assertNull(paraOtros.productor().telefonoContacto());
+            assertNull(paraOtros.productor().whatsappContacto());
+        }
+
+        @Test
+        @DisplayName("No debe exponer el número de un canal que el productor desactivó")
+        void testDetalleCanalDesactivado() {
+            OfertaDetalleResponse soloWhatsapp = detalleConCanales(true, false, true);
+
+            assertTrue(soloWhatsapp.productor().whatsappDisponible());
+            assertFalse(soloWhatsapp.productor().llamadaDisponible());
+            assertNull(soloWhatsapp.productor().telefonoContacto());
+            assertEquals("+573109876543", soloWhatsapp.productor().whatsappContacto());
+        }
+
+        @Test
+        @DisplayName("Debe marcar un canal como no disponible si está habilitado pero sin número")
+        void testDetalleCanalSinNumero() {
+            productor.setCanalWhatsappHabilitado(true);
+            productor.setCanalLlamadaHabilitado(true);
+            productor.setWhatsapp("  ");
+            Oferta oferta = ofertaGuardada(Producto.CAFE_PERGAMINO);
+            when(ofertaRepository.findByIdAndActivaTrue(oferta.getId())).thenReturn(Optional.of(oferta));
+
+            OfertaDetalleResponse detalle = servicioConReloj(AHORA).obtenerDetalle(oferta.getId(), true);
+
+            assertFalse(detalle.productor().whatsappDisponible());
+            assertFalse(detalle.productor().llamadaDisponible());
+            assertNull(detalle.productor().telefonoContacto());
+            assertNull(detalle.productor().whatsappContacto());
+        }
+
         @Test
         @DisplayName("Debe lanzar ResourceNotFoundException si la oferta no existe o está inactiva")
         void testObtenerDetalleNoDisponible() {
@@ -393,7 +444,7 @@ class OfertaServiceTest {
             when(ofertaRepository.findByIdAndActivaTrue(eq(id))).thenReturn(Optional.empty());
 
             ResourceNotFoundException ex = assertThrows(ResourceNotFoundException.class,
-                    () -> servicioConReloj(AHORA).obtenerDetalle(id));
+                    () -> servicioConReloj(AHORA).obtenerDetalle(id, false));
 
             assertEquals(OfertaService.MENSAJE_OFERTA_NO_DISPONIBLE, ex.getMessage());
         }
@@ -405,7 +456,7 @@ class OfertaServiceTest {
             Oferta oferta = ofertaEnCrecimiento(HOY.plusDays(desplazamiento));
             when(ofertaRepository.findByIdAndActivaTrue(oferta.getId())).thenReturn(Optional.of(oferta));
 
-            OfertaDetalleResponse detalle = servicioConReloj(AHORA).obtenerDetalle(oferta.getId());
+            OfertaDetalleResponse detalle = servicioConReloj(AHORA).obtenerDetalle(oferta.getId(), false);
 
             assertEquals(esperado, detalle.diasRestantesCosecha());
         }
@@ -416,7 +467,7 @@ class OfertaServiceTest {
             Oferta oferta = ofertaGuardada(Producto.CAFE_PERGAMINO);
             when(ofertaRepository.findByIdAndActivaTrue(oferta.getId())).thenReturn(Optional.of(oferta));
 
-            assertNull(servicioConReloj(AHORA).obtenerDetalle(oferta.getId()).diasRestantesCosecha());
+            assertNull(servicioConReloj(AHORA).obtenerDetalle(oferta.getId(), false).diasRestantesCosecha());
         }
 
         @Test
@@ -425,7 +476,7 @@ class OfertaServiceTest {
             Oferta oferta = ofertaEnCrecimiento(null);
             when(ofertaRepository.findByIdAndActivaTrue(oferta.getId())).thenReturn(Optional.of(oferta));
 
-            assertNull(servicioConReloj(AHORA).obtenerDetalle(oferta.getId()).diasRestantesCosecha());
+            assertNull(servicioConReloj(AHORA).obtenerDetalle(oferta.getId(), false).diasRestantesCosecha());
         }
 
         @Test
@@ -436,7 +487,7 @@ class OfertaServiceTest {
             Oferta oferta = ofertaEnCrecimiento(LocalDate.of(2026, 10, 23));
             when(ofertaRepository.findByIdAndActivaTrue(oferta.getId())).thenReturn(Optional.of(oferta));
 
-            OfertaDetalleResponse detalle = servicioConReloj(nocheEnBogota).obtenerDetalle(oferta.getId());
+            OfertaDetalleResponse detalle = servicioConReloj(nocheEnBogota).obtenerDetalle(oferta.getId(), false);
 
             assertEquals(1, detalle.diasRestantesCosecha());
         }

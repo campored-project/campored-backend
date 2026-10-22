@@ -130,11 +130,12 @@ public class OfertaService {
     // Fecha: 2026-10-22
     // Descripción: Consulta pública de una oferta activa con su finca y productor
     // ============================================================
-    // El mismo mensaje para inexistente e inactiva: el endpoint es anónimo y no debe revelar cuál es el caso
+    // El mismo mensaje para inexistente e inactiva: el endpoint es anónimo y no debe revelar cuál es el caso.
+    // esComprador lo resuelve el controlador: los números de contacto solo se entregan a compradores
     @Transactional(readOnly = true)
-    public OfertaDetalleResponse obtenerDetalle(UUID id) {
+    public OfertaDetalleResponse obtenerDetalle(UUID id, boolean esComprador) {
         return ofertaRepository.findByIdAndActivaTrue(id)
-                .map(oferta -> OfertaMapper.toDetalleResponse(oferta, LocalDate.now(clock)))
+                .map(oferta -> OfertaMapper.toDetalleResponse(oferta, LocalDate.now(clock), esComprador))
                 .orElseThrow(() -> new ResourceNotFoundException(MENSAJE_OFERTA_NO_DISPONIBLE));
     }
 

@@ -209,7 +209,7 @@ class OfertaSpecificationsTest {
         Page<Oferta> pagina = ofertaRepository.findAll(OfertaSpecifications.activas(),
                 PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "fechaCreacion")));
         pagina.forEach(oferta -> {
-            OfertaMapper.toDetalleResponse(oferta, LocalDate.now());
+            OfertaMapper.toDetalleResponse(oferta, LocalDate.now(), true);
             oferta.getFinca().getProductor().getNombre();
         });
 

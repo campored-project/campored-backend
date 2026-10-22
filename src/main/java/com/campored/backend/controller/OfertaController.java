@@ -16,6 +16,7 @@ import com.campored.backend.entity.EstadoCultivo;
 import com.campored.backend.entity.ModalidadLogistica;
 import com.campored.backend.entity.Municipio;
 import com.campored.backend.entity.Producto;
+import com.campored.backend.entity.Rol;
 import com.campored.backend.exception.InvalidInputException;
 import com.campored.backend.service.OfertaService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -33,6 +34,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -53,6 +55,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Tag(name = "Ofertas", description = "Publicación y consulta de ofertas del productor")
 public class OfertaController {
+
+    private static final String ROL_COMPRADOR = "ROLE_" + Rol.COMPRADOR.name();
 
     private final OfertaService ofertaService;
 
@@ -143,15 +147,24 @@ public class OfertaController {
     @PreAuthorize("permitAll()")
     @SecurityRequirements
     @Operation(summary = "Consultar el detalle público de una oferta activa",
-            description = "Endpoint público: no requiere token. Incluye la finca y el nombre del productor; "
-                    + "no expone correo, teléfono ni otros datos de contacto")
+            description = "Endpoint público: no requiere token. Incluye la finca, el nombre del productor y qué canales "
+                    + "de contacto tiene activos (whatsappDisponible, llamadaDisponible). telefonoContacto y "
+                    + "whatsappContacto solo se envían a compradores autenticados (ROLE_COMPRADOR) y para canales "
+                    + "activos; para visitantes anónimos y productores son null. Nunca se expone el correo")
     @ApiResponse(responseCode = "200", description = "Detalle de la oferta")
     @ApiResponse(responseCode = "400", description = "El id no es un UUID válido",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @ApiResponse(responseCode = "404", description = "La oferta no existe o no está disponible",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
-    public OfertaDetalleResponse obtenerDetalle(@PathVariable UUID id) {
-        return ofertaService.obtenerDetalle(id);
+    public OfertaDetalleResponse obtenerDetalle(@PathVariable UUID id,
+                                                @Parameter(hidden = true) Authentication autenticacion) {
+        return ofertaService.obtenerDetalle(id, esComprador(autenticacion));
+    }
+
+    // Spring entrega null para visitantes anónimos; un token inválido o expirado también llega como anónimo
+    private boolean esComprador(Authentication autenticacion) {
+        return autenticacion != null && autenticacion.getAuthorities().stream()
+                .anyMatch(permiso -> ROL_COMPRADOR.equals(permiso.getAuthority()));
     }
 
     private Municipio resolverMunicipio(String municipio) {
