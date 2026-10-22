@@ -8,15 +8,28 @@ package com.campored.backend.controller;
 
 import com.campored.backend.dto.CrearOfertaRequest;
 import com.campored.backend.dto.ErrorResponse;
+import com.campored.backend.dto.FiltroCatalogoOfertas;
+import com.campored.backend.dto.OfertaCatalogoResponse;
 import com.campored.backend.dto.OfertaResponse;
+import com.campored.backend.entity.EstadoCultivo;
+import com.campored.backend.entity.ModalidadLogistica;
+import com.campored.backend.entity.Municipio;
+import com.campored.backend.entity.Producto;
+import com.campored.backend.exception.InvalidInputException;
 import com.campored.backend.service.OfertaService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -24,6 +37,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
@@ -77,5 +91,50 @@ public class OfertaController {
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     public List<OfertaResponse> listarMisOfertas(@AuthenticationPrincipal UUID productorId) {
         return ofertaService.listarMisOfertas(productorId);
+    }
+
+    // ============================================================
+    // FEATURE: US-07 — Catálogo Público de Ofertas (Sprint 2)
+    // Autor: Cristian Diez
+    // Fecha: 2026-10-22
+    // Descripción: Consulta paginada de ofertas activas con filtros combinables
+    // ============================================================
+    // permitAll a nivel de método reemplaza el hasRole('PRODUCTOR') de la clase; SecurityConfig solo deja pasar
+    // a usuarios anónimos en GET /api/ofertas y GET /api/ofertas/{uuid}
+    @GetMapping
+    @PreAuthorize("permitAll()")
+    @SecurityRequirements
+    @Operation(summary = "Consultar el catálogo público de ofertas activas",
+            description = "Endpoint público: no requiere token y responde igual a compradores, productores y visitantes. "
+                    + "Solo incluye ofertas activas. Los filtros son opcionales y se combinan entre sí. "
+                    + "Por defecto ordena de la más reciente a la más antigua (sort=fechaCreacion,desc); "
+                    + "solo se puede ordenar por fechaCreacion, precioUnitario o fechaEstimadaCosecha. "
+                    + "El tamaño de página máximo es " + OfertaService.TAMANO_MAXIMO_PAGINA)
+    @ApiResponse(responseCode = "200", description = "Página de ofertas que cumplen los filtros")
+    @ApiResponse(responseCode = "400", description = "Filtro con un valor fuera del catálogo o campo de orden no permitido",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    public Page<OfertaCatalogoResponse> listarCatalogo(
+            @Parameter(description = "Código o nombre del municipio de la finca, sin distinguir mayúsculas ni tildes "
+                    + "(SONSON, sonson, Sonsón, SAN_CARLOS, San Carlos)", example = "SONSON")
+            @RequestParam(required = false) String municipio,
+            @Parameter(description = "EN_CRECIMIENTO o DISPONIBLE")
+            @RequestParam(required = false) EstadoCultivo estadoCultivo,
+            @Parameter(description = "Producto del catálogo; OTRO agrupa los productos fuera de la lista")
+            @RequestParam(required = false) Producto producto,
+            @Parameter(description = "RECOGIDA_FINCA y DESPACHO_PRODUCTOR incluyen también las ofertas AMBAS; "
+                    + "AMBAS devuelve solo las ofertas que admiten las dos modalidades")
+            @RequestParam(required = false) ModalidadLogistica modalidadLogistica,
+            @ParameterObject @PageableDefault(size = 20) Pageable pageable) {
+        FiltroCatalogoOfertas filtro = new FiltroCatalogoOfertas(
+                resolverMunicipio(municipio), estadoCultivo, producto, modalidadLogistica);
+        return ofertaService.listarCatalogo(filtro, pageable);
+    }
+
+    private Municipio resolverMunicipio(String municipio) {
+        if (municipio == null || municipio.isBlank()) {
+            return null;
+        }
+        return Municipio.desde(municipio)
+                .orElseThrow(() -> new InvalidInputException("El municipio '" + municipio + "' no es válido"));
     }
 }

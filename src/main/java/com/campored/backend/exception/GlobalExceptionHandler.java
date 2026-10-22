@@ -13,11 +13,14 @@ import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -74,6 +77,20 @@ public class GlobalExceptionHandler {
         ex.getBindingResult().getFieldErrors()
                 .forEach(error -> errores.putIfAbsent(error.getField(), error.getDefaultMessage()));
         return construir(HttpStatus.BAD_REQUEST, "La solicitud contiene campos inválidos", request, errores);
+    }
+
+    // Un enum fuera del catálogo o un UUID mal formado en la URL; sin este handler responderían 500
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException ex,
+                                                            HttpServletRequest request) {
+        String mensaje = "El parámetro '" + ex.getName() + "' tiene un valor inválido: '" + ex.getValue() + "'";
+        Class<?> tipo = ex.getRequiredType();
+        if (tipo != null && tipo.isEnum()) {
+            mensaje += ". Valores permitidos: " + Arrays.stream(tipo.getEnumConstants())
+                    .map(Object::toString)
+                    .collect(Collectors.joining(", "));
+        }
+        return construir(HttpStatus.BAD_REQUEST, mensaje, request, null);
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
