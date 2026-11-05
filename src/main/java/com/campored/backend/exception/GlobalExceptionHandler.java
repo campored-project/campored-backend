@@ -25,6 +25,9 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    // Compartido por @Valid y por los errores de negocio por campo (US-18) para que el frontend los trate igual
+    public static final String MENSAJE_CAMPOS_INVALIDOS = "La solicitud contiene campos inválidos";
+
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(ResourceAlreadyExistsException.class)
@@ -73,7 +76,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(InvalidInputException.class)
     public ResponseEntity<ErrorResponse> handleInvalidInput(InvalidInputException ex, HttpServletRequest request) {
-        return construir(HttpStatus.BAD_REQUEST, ex.getMessage(), request, null);
+        Map<String, String> errores = ex.getErrores().isEmpty() ? null : ex.getErrores();
+        return construir(HttpStatus.BAD_REQUEST, ex.getMessage(), request, errores);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -82,7 +86,7 @@ public class GlobalExceptionHandler {
         Map<String, String> errores = new LinkedHashMap<>();
         ex.getBindingResult().getFieldErrors()
                 .forEach(error -> errores.putIfAbsent(error.getField(), error.getDefaultMessage()));
-        return construir(HttpStatus.BAD_REQUEST, "La solicitud contiene campos inválidos", request, errores);
+        return construir(HttpStatus.BAD_REQUEST, MENSAJE_CAMPOS_INVALIDOS, request, errores);
     }
 
     // Un enum fuera del catálogo o un UUID mal formado en la URL; sin este handler responderían 500
