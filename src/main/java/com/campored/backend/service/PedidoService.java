@@ -107,7 +107,8 @@ public class PedidoService {
         pedido.setNotasAcceso(textoOpcional(request.getNotasAcceso()));
         pedido.setEstado(EstadoPedido.SOLICITADO);
 
-        Pedido guardado = pedidoRepository.save(pedido);
+        // saveAndFlush: @CreationTimestamp se asigna en el INSERT y la respuesta debe llevar fechaCreacion
+        Pedido guardado = pedidoRepository.saveAndFlush(pedido);
         log.info("Pedido {} creado por el comprador {} sobre la oferta {}", guardado.getId(), compradorId, oferta.getId());
         return PedidoMapper.toResponse(guardado);
     }
