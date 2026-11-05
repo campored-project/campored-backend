@@ -37,6 +37,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -138,6 +139,33 @@ public class OfertaController {
                                         @AuthenticationPrincipal UUID productorId,
                                         @Valid @RequestBody CambiarEstadoOfertaRequest request) {
         return ofertaService.cambiarEstado(id, productorId, request.getEstadoPublicacion());
+    }
+
+    // ============================================================
+    // FEATURE: US-10 — Eliminar Oferta (Sprint 3)
+    // Autor: Cristian Diez
+    // Fecha: 2026-11-05
+    // Descripción: Borrado físico de una oferta propia creada por error, bloqueado si ya tiene actividad
+    // ============================================================
+    // Hereda hasRole('PRODUCTOR') de la clase; SecurityConfig solo abre GET en /api/ofertas/{uuid}
+    @DeleteMapping("/{id}")
+    @Operation(summary = "Eliminar permanentemente una oferta del productor autenticado",
+            description = "Borrado físico: la oferta desaparece del catálogo, del detalle y de mis-ofertas. "
+                    + "También se pueden eliminar ofertas agotadas. Si la oferta tiene pedidos se bloquea; "
+                    + "en ese caso el productor debe marcarla como agotada")
+    @ApiResponse(responseCode = "204", description = "Oferta eliminada", content = @Content)
+    @ApiResponse(responseCode = "400", description = "El id no es un UUID válido",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "401", description = "Token ausente, inválido o expirado", content = @Content)
+    @ApiResponse(responseCode = "403", description = "El usuario no es productor o la oferta es de otro productor",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "404", description = "La oferta no existe",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "422", description = "La oferta tiene pedidos",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    public ResponseEntity<Void> eliminarOferta(@PathVariable UUID id, @AuthenticationPrincipal UUID productorId) {
+        ofertaService.eliminarOferta(id, productorId);
+        return ResponseEntity.noContent().build();
     }
 
     // ============================================================

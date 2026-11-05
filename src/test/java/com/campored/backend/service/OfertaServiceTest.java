@@ -20,6 +20,7 @@ import com.campored.backend.exception.InvalidInputException;
 import com.campored.backend.exception.ReglaNegocioException;
 import com.campored.backend.exception.ResourceNotFoundException;
 import com.campored.backend.repository.OfertaRepository;
+import com.campored.backend.repository.PedidoRepository;
 import com.campored.backend.repository.UsuarioRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -68,6 +69,9 @@ class OfertaServiceTest {
 
     @Mock
     private UsuarioRepository usuarioRepository;
+
+    @Mock
+    private PedidoRepository pedidoRepository;
 
     @InjectMocks
     private OfertaService ofertaService;
@@ -279,7 +283,8 @@ class OfertaServiceTest {
         private final FiltroCatalogoOfertas sinFiltros = new FiltroCatalogoOfertas(null, null, null, null);
 
         private OfertaService servicioConReloj(Instant instante) {
-            return new OfertaService(ofertaRepository, usuarioRepository, Clock.fixed(instante, ZONA_COLOMBIA));
+            return new OfertaService(ofertaRepository, usuarioRepository, pedidoRepository,
+                    Clock.fixed(instante, ZONA_COLOMBIA));
         }
 
         private Oferta ofertaEnCrecimiento(LocalDate fechaCosecha) {
