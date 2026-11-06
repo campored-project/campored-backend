@@ -106,8 +106,9 @@ public final class OfertaMapper {
         return oferta.isActiva() ? EstadoPublicacion.ACTIVA : EstadoPublicacion.AGOTADA;
     }
 
-    // Un canal apagado por el productor no expone su número aunque quien consulta sea comprador
-    private static ProductorPublicoResponse toProductorPublico(Usuario productor, boolean incluirContacto) {
+    // Un canal apagado por el productor no expone su número aunque quien consulta sea comprador.
+    // Público porque PedidoMapper (US-18) aplica la misma regla en el contacto del productor
+    public static ProductorPublicoResponse toProductorPublico(Usuario productor, boolean incluirContacto) {
         boolean whatsappDisponible = productor.isCanalWhatsappHabilitado() && tieneTexto(productor.getWhatsapp());
         boolean llamadaDisponible = productor.isCanalLlamadaHabilitado() && tieneTexto(productor.getTelefono());
         return new ProductorPublicoResponse(

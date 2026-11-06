@@ -4,16 +4,19 @@ import com.campored.backend.dto.CrearOfertaRequest;
 import com.campored.backend.dto.validation.OfertaValidator;
 import com.campored.backend.entity.EstadoCultivo;
 import com.campored.backend.entity.Finca;
+import com.campored.backend.entity.Jornada;
 import com.campored.backend.entity.ModalidadLogistica;
 import com.campored.backend.entity.Municipio;
 import com.campored.backend.entity.Negocio;
 import com.campored.backend.entity.Oferta;
+import com.campored.backend.entity.Pedido;
 import com.campored.backend.entity.Producto;
 import com.campored.backend.entity.Rol;
 import com.campored.backend.entity.TipoNegocio;
 import com.campored.backend.entity.UnidadMedida;
 import com.campored.backend.entity.Usuario;
 import com.campored.backend.repository.OfertaRepository;
+import com.campored.backend.repository.PedidoRepository;
 import com.campored.backend.repository.UsuarioRepository;
 import com.campored.backend.service.JwtService;
 import com.campored.backend.service.OfertaService;
@@ -60,6 +63,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -85,6 +89,9 @@ class OfertaControllerIntegrationTest {
 
     @Autowired
     private OfertaRepository ofertaRepository;
+
+    @Autowired
+    private PedidoRepository pedidoRepository;
 
     @Autowired
     private JwtService jwtService;
@@ -1172,5 +1179,138 @@ class OfertaControllerIntegrationTest {
                 .andExpect(jsonPath("$.paths['/api/ofertas/{id}'].put").exists())
                 .andExpect(jsonPath("$.paths['/api/ofertas/{id}'].put.security").doesNotExist())
                 .andExpect(jsonPath("$.paths['/api/ofertas/{id}/estado'].patch.security").doesNotExist());
+    }
+
+    // ============================================================
+    // FEATURE: US-10 — Eliminar Oferta (Sprint 3)
+    // Autor: Cristian Diez
+    // Fecha: 2026-11-05
+    // Descripción: DELETE /api/ofertas/{id} con JWT reales: borrado físico, bloqueo por pedidos y roles
+    // ============================================================
+    private void conPedido(Oferta ofertaPedida) {
+        Pedido pedido = new Pedido();
+        pedido.setOferta(ofertaPedida);
+        pedido.setComprador(comprador);
+        pedido.setCantidadSolicitada(new BigDecimal("5.00"));
+        pedido.setPrecioUnitario(ofertaPedida.getPrecioUnitario());
+        pedido.setPrecioTotalEstimado(new BigDecimal("260000.00"));
+        pedido.setDireccionEntrega("Calle 49 # 50-21");
+        pedido.setMunicipioEntrega(Municipio.RIONEGRO);
+        pedido.setFechaPreferida(LocalDate.now(OfertaValidator.ZONA_COLOMBIA).plusDays(2));
+        pedido.setJornada(Jornada.MANANA);
+        pedido.setModalidadEntrega(ModalidadLogistica.RECOGIDA_FINCA);
+        pedidoRepository.saveAndFlush(pedido);
+    }
+
+    @Test
+    @DisplayName("US-10 Esc 1 — elimina la oferta propia: 204, el detalle da 404 y sale de mis ofertas y del catálogo")
+    void testEliminarOfertaExitoso() throws Exception {
+        Oferta oferta = publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+        Oferta otra = publicar(productor, Producto.AGUACATE, ModalidadLogistica.AMBAS);
+
+        mockMvc.perform(delete(urlDetalle(oferta.getId())).with(autenticadoComo(productor)))
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""));
+
+        mockMvc.perform(get(urlDetalle(oferta.getId())))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get(URL_MIS_OFERTAS).with(autenticadoComo(productor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].id", contains(otra.getId().toString())));
+        mockMvc.perform(get(URL_OFERTAS))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[*].id", contains(otra.getId().toString())));
+
+        entityManager.flush();
+        entityManager.clear();
+        assertFalse(ofertaRepository.existsById(oferta.getId()));
+        assertEquals(1, ofertaRepository.count());
+    }
+
+    @Test
+    @DisplayName("US-10 Esc 1 — una oferta agotada sin pedidos también se elimina con 204")
+    void testEliminarOfertaAgotadaSinPedidos() throws Exception {
+        Oferta oferta = desactivar(publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS));
+
+        mockMvc.perform(delete(urlDetalle(oferta.getId())).with(autenticadoComo(productor)))
+                .andExpect(status().isNoContent());
+
+        entityManager.flush();
+        entityManager.clear();
+        assertFalse(ofertaRepository.existsById(oferta.getId()));
+    }
+
+    @Test
+    @DisplayName("US-10 Esc 2 — una oferta con pedidos responde 422 con el mensaje exacto y sigue en la BD")
+    void testEliminarOfertaConPedidos() throws Exception {
+        Oferta oferta = publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+        conPedido(oferta);
+
+        mockMvc.perform(delete(urlDetalle(oferta.getId())).with(autenticadoComo(productor)))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.mensaje").value(OfertaService.MENSAJE_OFERTA_CON_PEDIDOS));
+
+        entityManager.flush();
+        entityManager.clear();
+        assertTrue(ofertaRepository.existsById(oferta.getId()));
+        assertEquals(1, pedidoRepository.count());
+    }
+
+    @Test
+    @DisplayName("US-10 Esc 2 — una oferta agotada con pedidos también se bloquea")
+    void testEliminarOfertaAgotadaConPedidos() throws Exception {
+        Oferta oferta = publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+        conPedido(oferta);
+        desactivar(oferta);
+
+        mockMvc.perform(delete(urlDetalle(oferta.getId())).with(autenticadoComo(productor)))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.mensaje").value(OfertaService.MENSAJE_OFERTA_CON_PEDIDOS));
+
+        assertTrue(ofertaRepository.existsById(oferta.getId()));
+    }
+
+    @Test
+    @DisplayName("US-10 Regla — eliminar la oferta de otro productor responde 403 y no la borra")
+    void testEliminarOfertaAjena() throws Exception {
+        Oferta oferta = publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+        Usuario otroProductor = usuarioRepository.save(nuevoProductor("andres@finca.com", "Finca La Palma"));
+
+        mockMvc.perform(delete(urlDetalle(oferta.getId())).with(autenticadoComo(otroProductor)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.mensaje").value(OfertaService.MENSAJE_OFERTA_AJENA));
+
+        assertTrue(ofertaRepository.existsById(oferta.getId()));
+    }
+
+    @Test
+    @DisplayName("US-10 Regla — eliminar una oferta inexistente responde 404")
+    void testEliminarOfertaInexistente() throws Exception {
+        mockMvc.perform(delete(urlDetalle(UUID.randomUUID())).with(autenticadoComo(productor)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.mensaje").value(OfertaService.MENSAJE_OFERTA_NO_ENCONTRADA));
+    }
+
+    @Test
+    @DisplayName("US-10 Regla — un comprador no puede eliminar ofertas (403)")
+    void testEliminarOfertaComoComprador() throws Exception {
+        Oferta oferta = publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+
+        mockMvc.perform(delete(urlDetalle(oferta.getId())).with(autenticadoComo(comprador)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403));
+
+        assertTrue(ofertaRepository.existsById(oferta.getId()));
+    }
+
+    @Test
+    @DisplayName("US-10 Regla — eliminar una oferta sin token responde 401")
+    void testEliminarOfertaSinToken() throws Exception {
+        Oferta oferta = publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+
+        mockMvc.perform(delete(urlDetalle(oferta.getId())))
+                .andExpect(status().isUnauthorized());
+
+        assertTrue(ofertaRepository.existsById(oferta.getId()));
     }
 }

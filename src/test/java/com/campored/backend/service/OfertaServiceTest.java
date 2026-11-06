@@ -20,6 +20,7 @@ import com.campored.backend.exception.InvalidInputException;
 import com.campored.backend.exception.ReglaNegocioException;
 import com.campored.backend.exception.ResourceNotFoundException;
 import com.campored.backend.repository.OfertaRepository;
+import com.campored.backend.repository.PedidoRepository;
 import com.campored.backend.repository.UsuarioRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -68,6 +69,9 @@ class OfertaServiceTest {
 
     @Mock
     private UsuarioRepository usuarioRepository;
+
+    @Mock
+    private PedidoRepository pedidoRepository;
 
     @InjectMocks
     private OfertaService ofertaService;
@@ -279,7 +283,8 @@ class OfertaServiceTest {
         private final FiltroCatalogoOfertas sinFiltros = new FiltroCatalogoOfertas(null, null, null, null);
 
         private OfertaService servicioConReloj(Instant instante) {
-            return new OfertaService(ofertaRepository, usuarioRepository, Clock.fixed(instante, ZONA_COLOMBIA));
+            return new OfertaService(ofertaRepository, usuarioRepository, pedidoRepository,
+                    Clock.fixed(instante, ZONA_COLOMBIA));
         }
 
         private Oferta ofertaEnCrecimiento(LocalDate fechaCosecha) {
@@ -762,6 +767,87 @@ class OfertaServiceTest {
 
             assertEquals("La oferta ya está marcada como agotada.", ex.getMessage());
             verify(ofertaRepository, never()).save(any());
+        }
+    }
+
+    // ============================================================
+    // FEATURE: US-10 — Eliminar Oferta (Sprint 3)
+    // Autor: Cristian Diez
+    // Fecha: 2026-11-05
+    // Descripción: Borrado físico de una oferta propia, bloqueado si tiene pedidos
+    // ============================================================
+    @Nested
+    @DisplayName("Eliminar oferta")
+    class EliminarOferta {
+
+        private Oferta ofertaPropia() {
+            Oferta oferta = ofertaGuardada(Producto.CAFE_PERGAMINO);
+            when(ofertaRepository.findById(oferta.getId())).thenReturn(Optional.of(oferta));
+            return oferta;
+        }
+
+        @Test
+        @DisplayName("US-10 Esc 1 — elimina físicamente la oferta propia sin pedidos")
+        void testEliminarOfertaExitoso() {
+            Oferta oferta = ofertaPropia();
+            when(pedidoRepository.existsByOfertaId(oferta.getId())).thenReturn(false);
+
+            ofertaService.eliminarOferta(oferta.getId(), productorId);
+
+            verify(ofertaRepository).delete(oferta);
+            verify(ofertaRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("US-10 Esc 1 — una oferta agotada sin pedidos también se elimina")
+        void testEliminarOfertaAgotadaSinPedidos() {
+            Oferta oferta = ofertaPropia();
+            oferta.setActiva(false);
+            when(pedidoRepository.existsByOfertaId(oferta.getId())).thenReturn(false);
+
+            ofertaService.eliminarOferta(oferta.getId(), productorId);
+
+            verify(ofertaRepository).delete(oferta);
+        }
+
+        @Test
+        @DisplayName("US-10 Esc 2 — una oferta con pedidos se bloquea con 422 y no se elimina")
+        void testEliminarOfertaConPedidos() {
+            Oferta oferta = ofertaPropia();
+            when(pedidoRepository.existsByOfertaId(oferta.getId())).thenReturn(true);
+
+            ReglaNegocioException ex = assertThrows(ReglaNegocioException.class,
+                    () -> ofertaService.eliminarOferta(oferta.getId(), productorId));
+
+            assertEquals(OfertaService.MENSAJE_OFERTA_CON_PEDIDOS, ex.getMessage());
+            verify(ofertaRepository, never()).delete(any(Oferta.class));
+        }
+
+        @Test
+        @DisplayName("US-10 Regla — una oferta de otro productor responde 403 sin consultar pedidos")
+        void testEliminarOfertaAjena() {
+            Oferta oferta = ofertaPropia();
+
+            AccesoDenegadoException ex = assertThrows(AccesoDenegadoException.class,
+                    () -> ofertaService.eliminarOferta(oferta.getId(), UUID.randomUUID()));
+
+            assertEquals(OfertaService.MENSAJE_OFERTA_AJENA, ex.getMessage());
+            verifyNoInteractions(pedidoRepository);
+            verify(ofertaRepository, never()).delete(any(Oferta.class));
+        }
+
+        @Test
+        @DisplayName("US-10 Regla — una oferta inexistente responde 404")
+        void testEliminarOfertaInexistente() {
+            UUID id = UUID.randomUUID();
+            when(ofertaRepository.findById(id)).thenReturn(Optional.empty());
+
+            ResourceNotFoundException ex = assertThrows(ResourceNotFoundException.class,
+                    () -> ofertaService.eliminarOferta(id, productorId));
+
+            assertEquals(OfertaService.MENSAJE_OFERTA_NO_ENCONTRADA, ex.getMessage());
+            verifyNoInteractions(pedidoRepository);
+            verify(ofertaRepository, never()).delete(any(Oferta.class));
         }
     }
 }
