@@ -432,4 +432,83 @@ class ContactoControllerIntegrationTest {
         mockMvc.perform(get(URL_MIS_CONTACTOS))
                 .andExpect(status().isUnauthorized());
     }
+
+    // ============================================================
+    // FEATURE: US-14 — Contacto por WhatsApp (Sprint 3)
+    // Autor: Cristian Diez
+    // Fecha: 2026-11-05
+    // Descripción: Backend del botón de WhatsApp: registro del contacto con y sin pedido y canal no disponible
+    // ============================================================
+    @Test
+    @DisplayName("US-14 Esc 3 — el comprador del pedido registra el contacto por WhatsApp con pedidoId y aparece en /mios")
+    void testWhatsappDesdePedido() throws Exception {
+        Pedido propio = pedido(comprador, oferta);
+
+        mockMvc.perform(postJson(request(CanalContacto.WHATSAPP, propio.getId())).with(autenticadoComo(comprador)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.canal").value("WHATSAPP"))
+                .andExpect(jsonPath("$.pedidoId").value(propio.getId().toString()))
+                .andExpect(jsonPath("$.ofertaId").value(oferta.getId().toString()));
+
+        entityManager.flush();
+        entityManager.clear();
+        mockMvc.perform(get(URL_MIS_CONTACTOS).with(autenticadoComo(comprador)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].canal").value("WHATSAPP"))
+                .andExpect(jsonPath("$[0].pedidoId").value(propio.getId().toString()));
+    }
+
+    @Test
+    @DisplayName("US-14 Esc 4 — el contacto por WhatsApp sin pedido se registra con pedidoId null")
+    void testWhatsappSinPedido() throws Exception {
+        mockMvc.perform(postJson(request(CanalContacto.WHATSAPP, null)).with(autenticadoComo(comprador)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.canal").value("WHATSAPP"))
+                .andExpect(jsonPath("$.pedidoId").isEmpty());
+
+        entityManager.flush();
+        entityManager.clear();
+        mockMvc.perform(get(URL_MIS_CONTACTOS).with(autenticadoComo(comprador)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].pedidoId").isEmpty());
+    }
+
+    @Test
+    @DisplayName("US-14 Esc 2 — WhatsApp habilitado sin número: el pedido no expone el número y el registro responde 422")
+    void testWhatsappHabilitadoSinNumero() throws Exception {
+        productor.setWhatsapp(null);
+        usuarioRepository.saveAndFlush(productor);
+        Pedido propio = pedido(comprador, oferta);
+
+        mockMvc.perform(get("/api/pedidos/" + propio.getId()).with(autenticadoComo(comprador)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.productor.whatsappDisponible").value(false))
+                .andExpect(jsonPath("$.productor.whatsappContacto").isEmpty())
+                .andExpect(jsonPath("$.productor.llamadaDisponible").value(true));
+        mockMvc.perform(postJson(request(CanalContacto.WHATSAPP, propio.getId())).with(autenticadoComo(comprador)))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.mensaje").value(ContactoService.MENSAJE_CANAL_NO_HABILITADO));
+
+        assertEquals(0, registroContactoRepository.count());
+    }
+
+    @Test
+    @DisplayName("US-14 Esc 2 — WhatsApp apagado por el productor: el pedido no expone el número y el registro responde 422")
+    void testWhatsappApagado() throws Exception {
+        productor.setCanalWhatsappHabilitado(false);
+        usuarioRepository.saveAndFlush(productor);
+        Pedido propio = pedido(comprador, oferta);
+
+        mockMvc.perform(get("/api/pedidos/" + propio.getId()).with(autenticadoComo(comprador)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.productor.whatsappDisponible").value(false))
+                .andExpect(jsonPath("$.productor.whatsappContacto").isEmpty());
+        mockMvc.perform(postJson(request(CanalContacto.WHATSAPP, null)).with(autenticadoComo(comprador)))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.mensaje").value(ContactoService.MENSAJE_CANAL_NO_HABILITADO));
+
+        assertEquals(0, registroContactoRepository.count());
+    }
 }
