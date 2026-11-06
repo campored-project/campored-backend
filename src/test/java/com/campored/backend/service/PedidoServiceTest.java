@@ -628,4 +628,97 @@ class PedidoServiceTest {
             assertEquals(PedidoService.MENSAJE_PEDIDO_NO_ENCONTRADO, ex.getMessage());
         }
     }
+
+    // ============================================================
+    // FEATURE: US-23 — Pedidos Recibidos del Productor (Sprint 3)
+    // Autor: Cristian Diez
+    // Fecha: 2026-11-05
+    // Descripción: Listado de pedidos sobre las ofertas del productor autenticado
+    // ============================================================
+    @Nested
+    @DisplayName("Pedidos recibidos")
+    class PedidosRecibidos {
+
+        private Pedido pedidoSobreLaOferta(Jornada jornada) {
+            Pedido pedido = new Pedido();
+            pedido.setId(UUID.randomUUID());
+            pedido.setOferta(oferta);
+            pedido.setComprador(comprador);
+            pedido.setCantidadSolicitada(new BigDecimal("10.00"));
+            pedido.setPrecioUnitario(new BigDecimal("3500.00"));
+            pedido.setPrecioTotalEstimado(new BigDecimal("35000.00"));
+            pedido.setDireccionEntrega("Calle 49 # 50-21");
+            pedido.setMunicipioEntrega(Municipio.RIONEGRO);
+            pedido.setFechaPreferida(HOY.plusDays(2));
+            pedido.setJornada(jornada);
+            pedido.setModalidadEntrega(ModalidadLogistica.RECOGIDA_FINCA);
+            return pedido;
+        }
+
+        @Test
+        @DisplayName("US-23 Esc 1 — devuelve los pedidos en el orden del repositorio con el contacto del comprador")
+        void testListarRecibidosOrdenados() {
+            Pedido reciente = pedidoSobreLaOferta(Jornada.MANANA);
+            Pedido antiguo = pedidoSobreLaOferta(Jornada.TARDE);
+            when(usuarioRepository.findById(productor.getId())).thenReturn(Optional.of(productor));
+            when(pedidoRepository.findByOfertaProductorIdOrderByFechaCreacionDescIdAsc(productor.getId()))
+                    .thenReturn(List.of(reciente, antiguo));
+
+            List<PedidoResponse> recibidos = pedidoService.listarRecibidos(productor.getId());
+
+            assertEquals(List.of(reciente.getId(), antiguo.getId()), recibidos.stream().map(PedidoResponse::id).toList());
+            assertEquals(Jornada.MANANA, recibidos.get(0).jornada());
+            assertEquals("Laura Restrepo", recibidos.get(0).comprador().nombre());
+            assertEquals("Restaurante El Fogón", recibidos.get(0).comprador().nombreNegocio());
+            assertEquals("+573201112233", recibidos.get(0).comprador().whatsapp());
+        }
+
+        @Test
+        @DisplayName("US-23 Esc 2 — sin pedidos devuelve una lista vacía")
+        void testListarRecibidosVacio() {
+            when(usuarioRepository.findById(productor.getId())).thenReturn(Optional.of(productor));
+            when(pedidoRepository.findByOfertaProductorIdOrderByFechaCreacionDescIdAsc(productor.getId()))
+                    .thenReturn(List.of());
+
+            assertTrue(pedidoService.listarRecibidos(productor.getId()).isEmpty());
+        }
+
+        @Test
+        @DisplayName("US-23 Esc 3 — consulta solo por el id del productor autenticado")
+        void testListarRecibidosConsultaPorProductor() {
+            when(usuarioRepository.findById(productor.getId())).thenReturn(Optional.of(productor));
+            when(pedidoRepository.findByOfertaProductorIdOrderByFechaCreacionDescIdAsc(any())).thenReturn(List.of());
+
+            pedidoService.listarRecibidos(productor.getId());
+
+            ArgumentCaptor<UUID> captor = ArgumentCaptor.forClass(UUID.class);
+            verify(pedidoRepository).findByOfertaProductorIdOrderByFechaCreacionDescIdAsc(captor.capture());
+            assertEquals(productor.getId(), captor.getValue());
+        }
+
+        @Test
+        @DisplayName("US-23 Regla — un productor inexistente responde 404 sin consultar pedidos")
+        void testListarRecibidosProductorInexistente() {
+            UUID desconocido = UUID.randomUUID();
+            when(usuarioRepository.findById(desconocido)).thenReturn(Optional.empty());
+
+            ResourceNotFoundException ex = assertThrows(ResourceNotFoundException.class,
+                    () -> pedidoService.listarRecibidos(desconocido));
+
+            assertEquals(PedidoService.MENSAJE_PERFIL_NO_ENCONTRADO, ex.getMessage());
+            verify(pedidoRepository, never()).findByOfertaProductorIdOrderByFechaCreacionDescIdAsc(any());
+        }
+
+        @Test
+        @DisplayName("US-23 Regla — un usuario con rol COMPRADOR responde 404 sin consultar pedidos")
+        void testListarRecibidosUsuarioComprador() {
+            when(usuarioRepository.findById(comprador.getId())).thenReturn(Optional.of(comprador));
+
+            ResourceNotFoundException ex = assertThrows(ResourceNotFoundException.class,
+                    () -> pedidoService.listarRecibidos(comprador.getId()));
+
+            assertEquals(PedidoService.MENSAJE_PERFIL_NO_ENCONTRADO, ex.getMessage());
+            verify(pedidoRepository, never()).findByOfertaProductorIdOrderByFechaCreacionDescIdAsc(any());
+        }
+    }
 }
