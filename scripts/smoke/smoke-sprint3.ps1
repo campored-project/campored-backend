@@ -41,7 +41,6 @@ $BaseUrl = $BaseUrl.TrimEnd('/')
 $ICONO_OK = [char]::ConvertFromUtf32(0x2705)
 $ICONO_KO = [char]::ConvertFromUtf32(0x274C)
 $ICONO_AVISO = [char]::ConvertFromUtf32(0x26A0)
-$ICONO_INFO = [char]::ConvertFromUtf32(0x2139)
 
 # ---------------------------------------------------------------------------
 # Mensajes exactos del contrato (docs/API_CONTRATO_SPRINT3.md)
@@ -354,6 +353,7 @@ Write-Seccion 'B. Datos de prueba'
 
 $Claves = @{}
 $Tokens = @{}
+$RespLogin = @{}
 $Correos = @{
     ProductorA = "smoke.productora.$Sufijo@campored.test"
     ProductorB = "smoke.productorb.$Sufijo@campored.test"
@@ -395,6 +395,7 @@ foreach ($k in 'ProductorA', 'ProductorB', 'CompradorA', 'CompradorB') {
         param($x) if (-not $x.Datos.token) { 'la respuesta no trae token' }
     })
     $Tokens[$k] = $r.Datos.token
+    $RespLogin[$k] = $r
 }
 $TPA = $Tokens.ProductorA; $TPB = $Tokens.ProductorB; $TCA = $Tokens.CompradorA; $TCB = $Tokens.CompradorB
 
@@ -414,6 +415,7 @@ $r = Invoke-Api -Metodo PATCH -Ruta '/api/usuarios/perfil/productor' -Token $TPB
 
 $O = @{}
 $Precio = @{}
+$RespOferta = @{}
 $ofertas = @(
     @{ Id = 'O1'; Token = $TPA; Desc = 'O1 DISPONIBLE, RECOGIDA_FINCA, 250 KILOGRAMO'; Cuerpo = [ordered]@{
         producto = 'TOMATE_CHONTO'; descripcion = "Smoke test $Sufijo - O1"; cantidadDisponible = 250; unidadMedida = 'KILOGRAMO'
@@ -440,6 +442,7 @@ foreach ($of in $ofertas) {
         param($x) if (-not $x.Datos.id) { 'la respuesta no trae id' }
     })
     $O[$of.Id] = $r.Datos.id
+    $RespOferta[$of.Id] = $r
     $Precio[$of.Id] = [decimal]$of.Cuerpo.precioUnitario
 }
 
@@ -490,8 +493,8 @@ $r = Invoke-Api -Metodo GET -Ruta "/api/ofertas/$($O.O1)"
     param($x) if ([decimal]$x.Datos.cantidadDisponible -ne 250) { "cantidadDisponible $($x.Datos.cantidadDisponible), se esperaba 250" }
 })
 
-$r = Invoke-Api -Metodo POST -Ruta '/api/pedidos' -Token $TCA -Cuerpo (New-Pedido $O.O1 -Quitar 'direccionEntrega')
-[void](Test-Check -Hu 'US-18' -Escenario 'Esc 2 sin dirección de entrega' -Esperado 400 -Resp $r -Validar {
+$respSinDireccion = Invoke-Api -Metodo POST -Ruta '/api/pedidos' -Token $TCA -Cuerpo (New-Pedido $O.O1 -Quitar 'direccionEntrega')
+[void](Test-Check -Hu 'US-18' -Escenario 'Esc 2 sin dirección de entrega' -Esperado 400 -Resp $respSinDireccion -Validar {
     param($x) Assert-Mensaje $x $MSG.CamposInvalidos; Assert-ErrorCampo $x 'direccionEntrega' $MSG.DireccionRequerida
 })
 $r = Invoke-Api -Metodo POST -Ruta '/api/pedidos' -Token $TCA -Cuerpo (New-Pedido $O.O1 -Quitar 'jornada')
@@ -762,33 +765,32 @@ $resp22 = [pscustomobject]@{ Status = 200; Datos = $null; Texto = ''; Headers = 
 })
 
 # ===========================================================================
-# I. Hora de las fechas (solo reportar)
+# I. Fechas con el offset de Colombia (US-22, AB#52)
 # ===========================================================================
-Write-Seccion 'I. Hora de las fechas (solo reporte)'
+Write-Seccion 'I. Fechas con el offset de Colombia (US-22, AB#52)'
 
-function Write-ReporteHora([string]$Etiqueta, [string]$Valor, $Resp) {
-    if (-not $Valor) { Write-Host "$ICONO_INFO $($Etiqueta): sin valor"; return }
-    $conOffset = $Valor -match '(Z|[+-]\d{2}:?\d{2})$'
-    $medioUtc = $Resp.InicioUtc.AddTicks([long](($Resp.FinUtc - $Resp.InicioUtc).Ticks / 2))
-    $medioCol = ConvertTo-HoraColombia $medioUtc
-    if ($conOffset) {
-        $valorUtc = [DateTimeOffset]::Parse($Valor, [Globalization.CultureInfo]::InvariantCulture).UtcDateTime
-        $difUtc = [math]::Abs(($valorUtc - $medioUtc).TotalSeconds)
-        $coincide = if ($difUtc -lt 120) { 'instante correcto (lleva offset)' } else { "no coincide (diferencia $([math]::Round($difUtc)) s)" }
-    } else {
-        $valorLocal = [DateTime]::Parse($Valor, [Globalization.CultureInfo]::InvariantCulture)
-        $difUtc = [math]::Abs(($valorLocal - $medioUtc).TotalSeconds)
-        $difCol = [math]::Abs(($valorLocal - $medioCol).TotalSeconds)
-        $coincide = if ($difUtc -lt 120) { 'UTC' } elseif ($difCol -lt 120) { 'hora de Colombia' } else { "ninguna (dif. UTC $([math]::Round($difUtc)) s, Colombia $([math]::Round($difCol)) s)" }
+# La fecha debe llevar -05:00 y estar a ±5 minutos de la hora de Colombia en que se hizo la petición
+function Test-FechaColombia([string]$Etiqueta, [string]$Esperado, $Resp, [scriptblock]$Valor) {
+    $texto = if ($Resp) { [string](& $Valor $Resp) } else { '' }
+    [void](Test-Check -Hu 'US-22' -Escenario "I $Etiqueta con offset -05:00 y hora de la corrida" -Esperado $Esperado -Resp $Resp -Validar {
+        param($x)
+        if (-not $texto) { return 'sin valor' }
+        if ($texto -notmatch '-05:00$') { return 'no termina en -05:00' }
+        $medioUtc = $x.InicioUtc.AddTicks([long](($x.FinUtc - $x.InicioUtc).Ticks / 2))
+        $instanteUtc = [DateTimeOffset]::Parse($texto, [Globalization.CultureInfo]::InvariantCulture).UtcDateTime
+        $diferencia = [math]::Abs(($instanteUtc - $medioUtc).TotalSeconds)
+        if ($diferencia -gt 300) { "a $([math]::Round($diferencia)) s de la hora de la corrida (máximo 300 s)" }
+    })
+    if ($Resp) {
+        $medioCol = ConvertTo-HoraColombia $Resp.InicioUtc.AddTicks([long](($Resp.FinUtc - $Resp.InicioUtc).Ticks / 2))
+        Write-Host ("      valor: '{0}' · hora Colombia de la petición: {1:yyyy-MM-ddTHH:mm:ss}" -f $texto, $medioCol)
     }
-    Write-Host "$ICONO_INFO $($Etiqueta): '$Valor'"
-    Write-Host ("      offset: {0} · UTC de la petición: {1:yyyy-MM-ddTHH:mm:ss} · Colombia: {2:yyyy-MM-ddTHH:mm:ss} · coincide con: {3}" -f `
-        $(if ($conOffset) { 'sí' } else { 'no' }), $medioUtc, $medioCol, $coincide)
 }
-Write-ReporteHora 'fechaCreacion de P1' $respP1.Datos.fechaCreacion $respP1
-Write-ReporteHora 'fechaContacto de C1' $respC1.Datos.fechaContacto $respC1
-$ultimoError = @($Respuestas4xx5xx | Where-Object { $_.Datos -and $_.Datos.timestamp } | Select-Object -Last 1)
-if ($ultimoError.Count -gt 0) { Write-ReporteHora 'timestamp de ErrorResponse' $ultimoError[0].Datos.timestamp $ultimoError[0] }
+Test-FechaColombia 'fechaCreacion del pedido P1' '201' $respP1 { param($x) $x.Datos.fechaCreacion }
+Test-FechaColombia 'fechaContacto del contacto C1' '201' $respC1 { param($x) $x.Datos.fechaContacto }
+Test-FechaColombia 'timestamp de ErrorResponse (400 sin dirección)' '400' $respSinDireccion { param($x) $x.Datos.timestamp }
+Test-FechaColombia 'fechaCreacion de la oferta O1' '201' $RespOferta['O1'] { param($x) $x.Datos.fechaCreacion }
+Test-FechaColombia 'usuario.fechaRegistro del login del comprador A' '200' $RespLogin['CompradorA'] { param($x) $x.Datos.usuario.fechaRegistro }
 
 # ---------------------------------------------------------------------------
 # Retirar del catálogo público las ofertas smoke que siguen activas
