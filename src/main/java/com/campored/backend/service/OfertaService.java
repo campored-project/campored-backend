@@ -25,6 +25,7 @@ import com.campored.backend.exception.ResourceNotFoundException;
 import com.campored.backend.repository.OfertaRepository;
 import com.campored.backend.repository.OfertaSpecifications;
 import com.campored.backend.repository.PedidoRepository;
+import com.campored.backend.repository.RegistroContactoRepository;
 import com.campored.backend.repository.UsuarioRepository;
 import com.campored.backend.util.OfertaMapper;
 import lombok.RequiredArgsConstructor;
@@ -60,7 +61,6 @@ public class OfertaService {
     public static final String MENSAJE_OFERTA_YA_AGOTADA = "La oferta ya está marcada como agotada.";
     public static final String MENSAJE_OFERTA_CON_PEDIDOS =
             "No puedes eliminar esta oferta porque tiene pedidos pendientes. Primero márcala como agotada.";
-    // US-19 (bloque B): se usa cuando exista RegistroContacto
     public static final String MENSAJE_OFERTA_CON_CONTACTOS =
             "No puedes eliminar esta oferta porque ya tiene contactos de compradores. Márcala como agotada.";
     public static final int TAMANO_MAXIMO_PAGINA = 50;
@@ -76,6 +76,7 @@ public class OfertaService {
     private final OfertaRepository ofertaRepository;
     private final UsuarioRepository usuarioRepository;
     private final PedidoRepository pedidoRepository;
+    private final RegistroContactoRepository registroContactoRepository;
     private final Clock clock;
 
     @Transactional
@@ -152,8 +153,9 @@ public class OfertaService {
     // Fecha: 2026-11-05
     // Descripción: Borrado físico de una oferta propia creada por error, bloqueado si ya tiene actividad
     // ============================================================
-    // A diferencia de US-09 el registro desaparece. Una oferta con pedidos se conserva para no romper
-    // el historial del comprador: el productor debe marcarla como agotada. Aplica también a ofertas agotadas
+    // A diferencia de US-09 el registro desaparece. Una oferta con pedidos o contactos se conserva para no romper
+    // el historial del comprador: el productor debe marcarla como agotada. Aplica también a ofertas agotadas.
+    // Si tiene pedidos y contactos, responde el mensaje de pedidos
     @Transactional
     public void eliminarOferta(UUID ofertaId, UUID productorId) {
         Oferta oferta = buscarOfertaPropia(ofertaId, productorId);
@@ -161,7 +163,11 @@ public class OfertaService {
             log.warn("Productor {} intentó eliminar la oferta {} que tiene pedidos", productorId, ofertaId);
             throw new ReglaNegocioException(MENSAJE_OFERTA_CON_PEDIDOS);
         }
-        // US-19 (bloque B): validar aquí registrosContacto con MENSAJE_OFERTA_CON_CONTACTOS
+        // Los contactos son el historial del comprador (US-19): borrar la oferta los dejaría sin referencia
+        if (registroContactoRepository.existsByOfertaId(ofertaId)) {
+            log.warn("Productor {} intentó eliminar la oferta {} que tiene contactos", productorId, ofertaId);
+            throw new ReglaNegocioException(MENSAJE_OFERTA_CON_CONTACTOS);
+        }
 
         ofertaRepository.delete(oferta);
         log.info("Oferta {} eliminada por el productor {}", ofertaId, productorId);
