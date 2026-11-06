@@ -2,12 +2,19 @@ package com.campored.backend.controller;
 
 import com.campored.backend.dto.ActualizarPerfilCompradorRequest;
 import com.campored.backend.dto.ActualizarPerfilProductorRequest;
+import com.campored.backend.entity.EstadoCultivo;
 import com.campored.backend.entity.Finca;
+import com.campored.backend.entity.ModalidadLogistica;
 import com.campored.backend.entity.Municipio;
 import com.campored.backend.entity.Negocio;
+import com.campored.backend.entity.Oferta;
+import com.campored.backend.entity.Producto;
 import com.campored.backend.entity.Rol;
 import com.campored.backend.entity.TipoNegocio;
+import com.campored.backend.entity.UnidadMedida;
 import com.campored.backend.entity.Usuario;
+import com.campored.backend.exception.GlobalExceptionHandler;
+import com.campored.backend.repository.OfertaRepository;
 import com.campored.backend.repository.UsuarioRepository;
 import com.campored.backend.service.JwtService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -19,18 +26,22 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -56,6 +67,12 @@ class UsuarioControllerIntegrationTest {
 
     @Autowired
     private JwtService jwtService;
+
+    @Autowired
+    private OfertaRepository ofertaRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     private Usuario productor;
     private Usuario comprador;
@@ -196,9 +213,124 @@ class UsuarioControllerIntegrationTest {
                 .canalWhatsappHabilitado(true)
                 .build();
 
+        // US-17: el error llega en errores.whatsapp, igual que cuando lo detecta @Valid.
+        // flush antes de la petición para que la lectura por JDBC encuentre al productor del setUp
+        usuarioRepository.flush();
         mockMvc.perform(patchJson(URL_PERFIL_PRODUCTOR, request).with(autenticadoComo(productor)))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.mensaje").value(ActualizarPerfilProductorRequest.MENSAJE_WHATSAPP_REQUERIDO));
+                .andExpect(jsonPath("$.mensaje").value(GlobalExceptionHandler.MENSAJE_CAMPOS_INVALIDOS))
+                .andExpect(jsonPath("$.errores.whatsapp").value(ActualizarPerfilProductorRequest.MENSAJE_WHATSAPP_REQUERIDO))
+                .andExpect(jsonPath("$.errores.telefono").doesNotExist());
+
+        assertFalse(canalGuardado("canal_whatsapp_habilitado"));
+    }
+
+    // ============================================================
+    // FEATURE: US-17 — Canales de Contacto del Productor (Sprint 3)
+    // Autor: Cristian Diez
+    // Fecha: 2026-11-05
+    // Descripción: PATCH /api/usuarios/perfil/productor con JWT reales: canales, errores por campo y efecto en ofertas
+    // ============================================================
+    // Se lee por JDBC: el servicio modifica la entidad gestionada antes de validar y el repositorio devolvería
+    // esa instancia en memoria aunque la base no haya cambiado
+    private boolean canalGuardado(String columna) {
+        return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+                "SELECT " + columna + " FROM usuarios WHERE id = ?", Boolean.class, productor.getId()));
+    }
+
+    private Oferta ofertaDelProductor() {
+        Oferta oferta = new Oferta();
+        oferta.setProductor(productor);
+        oferta.setFinca(productor.getFinca());
+        oferta.setProducto(Producto.TOMATE_CHONTO);
+        oferta.setCantidadDisponible(new BigDecimal("40"));
+        oferta.setUnidadMedida(UnidadMedida.KILOGRAMO);
+        oferta.setPrecioUnitario(new BigDecimal("3500"));
+        oferta.setEstadoCultivo(EstadoCultivo.DISPONIBLE);
+        oferta.setModalidadLogistica(ModalidadLogistica.AMBAS);
+        return ofertaRepository.saveAndFlush(oferta);
+    }
+
+    @Test
+    @DisplayName("US-17 Esc 1 — activa WhatsApp con número y apaga la llamada: en sus ofertas solo sale el WhatsApp")
+    void testCanalesHabilitacionSelectiva() throws Exception {
+        Oferta oferta = ofertaDelProductor();
+        ActualizarPerfilProductorRequest request = ActualizarPerfilProductorRequest.builder()
+                .whatsapp("+573105556644")
+                .canalWhatsappHabilitado(true)
+                .canalLlamadaHabilitado(false)
+                .build();
+
+        mockMvc.perform(patchJson(URL_PERFIL_PRODUCTOR, request).with(autenticadoComo(productor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.canalWhatsappHabilitado").value(true))
+                .andExpect(jsonPath("$.canalLlamadaHabilitado").value(false))
+                .andExpect(jsonPath("$.whatsapp").value("+573105556644"));
+
+        mockMvc.perform(get("/api/ofertas/" + oferta.getId()).with(autenticadoComo(comprador)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.productor.whatsappDisponible").value(true))
+                .andExpect(jsonPath("$.productor.whatsappContacto").value("+573105556644"))
+                .andExpect(jsonPath("$.productor.llamadaDisponible").value(false))
+                .andExpect(jsonPath("$.productor.telefonoContacto").isEmpty());
+    }
+
+    @Test
+    @DisplayName("US-17 Esc 2 — activar la llamada sin teléfono guardado responde 400 en errores.telefono y no se guarda")
+    void testCanalesLlamadaSinTelefonoGuardado() throws Exception {
+        productor.setTelefono(null);
+        usuarioRepository.saveAndFlush(productor);
+        ActualizarPerfilProductorRequest request = ActualizarPerfilProductorRequest.builder()
+                .canalLlamadaHabilitado(true)
+                .build();
+
+        mockMvc.perform(patchJson(URL_PERFIL_PRODUCTOR, request).with(autenticadoComo(productor)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.mensaje").value(GlobalExceptionHandler.MENSAJE_CAMPOS_INVALIDOS))
+                .andExpect(jsonPath("$.errores.telefono").value(ActualizarPerfilProductorRequest.MENSAJE_TELEFONO_REQUERIDO));
+
+        assertFalse(canalGuardado("canal_llamada_habilitado"));
+    }
+
+    @Test
+    @DisplayName("US-17 Esc 2 — activar los dos canales sin números guardados responde los dos errores")
+    void testCanalesAmbosSinNumeroGuardado() throws Exception {
+        productor.setTelefono(null);
+        usuarioRepository.saveAndFlush(productor);
+        ActualizarPerfilProductorRequest request = ActualizarPerfilProductorRequest.builder()
+                .canalLlamadaHabilitado(true)
+                .canalWhatsappHabilitado(true)
+                .build();
+
+        mockMvc.perform(patchJson(URL_PERFIL_PRODUCTOR, request).with(autenticadoComo(productor)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errores.telefono").value(ActualizarPerfilProductorRequest.MENSAJE_TELEFONO_REQUERIDO))
+                .andExpect(jsonPath("$.errores.whatsapp").value(ActualizarPerfilProductorRequest.MENSAJE_WHATSAPP_REQUERIDO));
+
+        assertFalse(canalGuardado("canal_llamada_habilitado"));
+        assertFalse(canalGuardado("canal_whatsapp_habilitado"));
+    }
+
+    @Test
+    @DisplayName("US-17 Esc 3 — apagar los dos canales se guarda sin error")
+    void testCanalesAmbosApagados() throws Exception {
+        productor.setWhatsapp("+573105556644");
+        productor.setCanalLlamadaHabilitado(true);
+        productor.setCanalWhatsappHabilitado(true);
+        usuarioRepository.saveAndFlush(productor);
+        ActualizarPerfilProductorRequest request = ActualizarPerfilProductorRequest.builder()
+                .canalLlamadaHabilitado(false)
+                .canalWhatsappHabilitado(false)
+                .build();
+
+        mockMvc.perform(patchJson(URL_PERFIL_PRODUCTOR, request).with(autenticadoComo(productor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.canalLlamadaHabilitado").value(false))
+                .andExpect(jsonPath("$.canalWhatsappHabilitado").value(false));
+
+        usuarioRepository.flush();
+        assertFalse(canalGuardado("canal_llamada_habilitado"));
+        assertFalse(canalGuardado("canal_whatsapp_habilitado"));
     }
 
     @Test

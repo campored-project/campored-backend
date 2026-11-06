@@ -11,6 +11,7 @@ import com.campored.backend.entity.Negocio;
 import com.campored.backend.entity.Rol;
 import com.campored.backend.entity.TipoNegocio;
 import com.campored.backend.entity.Usuario;
+import com.campored.backend.exception.GlobalExceptionHandler;
 import com.campored.backend.exception.InvalidInputException;
 import com.campored.backend.exception.ResourceAlreadyExistsException;
 import com.campored.backend.exception.ResourceNotFoundException;
@@ -24,6 +25,8 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -379,7 +382,9 @@ class UsuarioServiceTest {
         InvalidInputException ex = assertThrows(InvalidInputException.class,
                 () -> usuarioService.actualizarPerfilProductor(productor.getId(), request));
 
-        assertEquals(ActualizarPerfilProductorRequest.MENSAJE_TELEFONO_REQUERIDO, ex.getMessage());
+        // US-17: el error llega por campo; el mensaje general es el mismo de @Valid
+        assertEquals(GlobalExceptionHandler.MENSAJE_CAMPOS_INVALIDOS, ex.getMessage());
+        assertEquals(Map.of("telefono", ActualizarPerfilProductorRequest.MENSAJE_TELEFONO_REQUERIDO), ex.getErrores());
         verify(usuarioRepository, never()).save(any());
     }
 
@@ -395,8 +400,77 @@ class UsuarioServiceTest {
         InvalidInputException ex = assertThrows(InvalidInputException.class,
                 () -> usuarioService.actualizarPerfilProductor(productor.getId(), request));
 
-        assertEquals(ActualizarPerfilProductorRequest.MENSAJE_WHATSAPP_REQUERIDO, ex.getMessage());
+        // US-17: el error llega por campo; el mensaje general es el mismo de @Valid
+        assertEquals(GlobalExceptionHandler.MENSAJE_CAMPOS_INVALIDOS, ex.getMessage());
+        assertEquals(Map.of("whatsapp", ActualizarPerfilProductorRequest.MENSAJE_WHATSAPP_REQUERIDO), ex.getErrores());
         verify(usuarioRepository, never()).save(any());
+    }
+
+    // ============================================================
+    // FEATURE: US-17 — Canales de Contacto del Productor (Sprint 3)
+    // Autor: Cristian Diez
+    // Fecha: 2026-11-05
+    // Descripción: Habilitación selectiva de canales y errores por campo
+    // ============================================================
+    @Test
+    @DisplayName("US-17 Esc 1 — activa WhatsApp con número y apaga la llamada")
+    void testCanalesHabilitacionSelectiva() {
+        Usuario productor = productorGuardado();
+        productor.setCanalLlamadaHabilitado(true);
+        simularBusqueda(productor);
+        ActualizarPerfilProductorRequest request = ActualizarPerfilProductorRequest.builder()
+                .whatsapp("+573105556644")
+                .canalWhatsappHabilitado(true)
+                .canalLlamadaHabilitado(false)
+                .build();
+
+        UsuarioResponse respuesta = usuarioService.actualizarPerfilProductor(productor.getId(), request);
+
+        assertTrue(respuesta.isCanalWhatsappHabilitado());
+        assertFalse(respuesta.isCanalLlamadaHabilitado());
+        assertEquals("+573105556644", respuesta.getWhatsapp());
+        verify(usuarioRepository).save(productor);
+    }
+
+    @Test
+    @DisplayName("US-17 Esc 2 — los dos canales sin número devuelven los dos errores en orden y no se guarda")
+    void testCanalesAmbosSinNumero() {
+        Usuario productor = productorGuardado();
+        simularBusqueda(productor);
+        ActualizarPerfilProductorRequest request = ActualizarPerfilProductorRequest.builder()
+                .telefono("")
+                .canalLlamadaHabilitado(true)
+                .canalWhatsappHabilitado(true)
+                .build();
+
+        InvalidInputException ex = assertThrows(InvalidInputException.class,
+                () -> usuarioService.actualizarPerfilProductor(productor.getId(), request));
+
+        assertEquals(GlobalExceptionHandler.MENSAJE_CAMPOS_INVALIDOS, ex.getMessage());
+        assertEquals(List.of("telefono", "whatsapp"), List.copyOf(ex.getErrores().keySet()));
+        assertEquals(ActualizarPerfilProductorRequest.MENSAJE_TELEFONO_REQUERIDO, ex.getErrores().get("telefono"));
+        assertEquals(ActualizarPerfilProductorRequest.MENSAJE_WHATSAPP_REQUERIDO, ex.getErrores().get("whatsapp"));
+        verify(usuarioRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("US-17 Esc 3 — los dos canales apagados se guardan sin error")
+    void testCanalesAmbosApagados() {
+        Usuario productor = productorGuardado();
+        productor.setWhatsapp("+573105556644");
+        productor.setCanalLlamadaHabilitado(true);
+        productor.setCanalWhatsappHabilitado(true);
+        simularBusqueda(productor);
+        ActualizarPerfilProductorRequest request = ActualizarPerfilProductorRequest.builder()
+                .canalLlamadaHabilitado(false)
+                .canalWhatsappHabilitado(false)
+                .build();
+
+        UsuarioResponse respuesta = usuarioService.actualizarPerfilProductor(productor.getId(), request);
+
+        assertFalse(respuesta.isCanalLlamadaHabilitado());
+        assertFalse(respuesta.isCanalWhatsappHabilitado());
+        verify(usuarioRepository).save(productor);
     }
 
     @Test
