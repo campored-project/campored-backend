@@ -511,4 +511,62 @@ class ContactoControllerIntegrationTest {
 
         assertEquals(0, registroContactoRepository.count());
     }
+
+    // ============================================================
+    // FEATURE: US-15 — Contacto por Llamada (Sprint 3)
+    // Autor: Cristian Diez
+    // Fecha: 2026-11-05
+    // Descripción: Backend del botón de llamada: registro del contacto y canal no disponible
+    // ============================================================
+    // El caso "llamada apagada con teléfono registrado → telefonoContacto null en GET /api/pedidos/{id}" ya lo
+    // cubre PedidoControllerIntegrationTest.testObtenerPedidoComprador (US-18)
+    @Test
+    @DisplayName("US-15 Esc 3 — el contacto por llamada se registra y aparece en /mios con canal LLAMADA")
+    void testLlamadaRegistrada() throws Exception {
+        Pedido propio = pedido(comprador, oferta);
+
+        mockMvc.perform(postJson(request(CanalContacto.LLAMADA, propio.getId())).with(autenticadoComo(comprador)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.canal").value("LLAMADA"))
+                .andExpect(jsonPath("$.pedidoId").value(propio.getId().toString()));
+
+        entityManager.flush();
+        entityManager.clear();
+        mockMvc.perform(get(URL_MIS_CONTACTOS).with(autenticadoComo(comprador)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].canal").value("LLAMADA"))
+                .andExpect(jsonPath("$[0].productorNombre").value("María Gómez"));
+    }
+
+    @Test
+    @DisplayName("US-15 Esc 2 — llamada apagada por el productor: el registro por llamada responde 422")
+    void testLlamadaApagada() throws Exception {
+        apagarLlamada();
+
+        mockMvc.perform(postJson(request(CanalContacto.LLAMADA, null)).with(autenticadoComo(comprador)))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.mensaje").value(ContactoService.MENSAJE_CANAL_NO_HABILITADO));
+
+        assertEquals(0, registroContactoRepository.count());
+    }
+
+    @Test
+    @DisplayName("US-15 Esc 2 — llamada habilitada sin teléfono: el pedido no expone el número y el registro responde 422")
+    void testLlamadaHabilitadaSinNumero() throws Exception {
+        productor.setTelefono("  ");
+        usuarioRepository.saveAndFlush(productor);
+        Pedido propio = pedido(comprador, oferta);
+
+        mockMvc.perform(get("/api/pedidos/" + propio.getId()).with(autenticadoComo(comprador)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.productor.llamadaDisponible").value(false))
+                .andExpect(jsonPath("$.productor.telefonoContacto").isEmpty())
+                .andExpect(jsonPath("$.productor.whatsappDisponible").value(true));
+        mockMvc.perform(postJson(request(CanalContacto.LLAMADA, propio.getId())).with(autenticadoComo(comprador)))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.mensaje").value(ContactoService.MENSAJE_CANAL_NO_HABILITADO));
+
+        assertEquals(0, registroContactoRepository.count());
+    }
 }
