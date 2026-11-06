@@ -185,7 +185,7 @@ Primero se valida que exista (404) y luego el permiso (403).
 
 ### DELETE /api/ofertas/{id}
 
-Borrado **físico** de una oferta propia. Tras el 204 la oferta desaparece del catálogo, del detalle (`GET /api/ofertas/{id}` → 404) y de `mis-ofertas`. Se pueden eliminar tanto ofertas activas como agotadas, siempre que no tengan pedidos.
+Borrado **físico** de una oferta propia. Tras el 204 la oferta desaparece del catálogo, del detalle (`GET /api/ofertas/{id}` → 404) y de `mis-ofertas`. Se pueden eliminar tanto ofertas activas como agotadas, siempre que no tengan pedidos ni contactos registrados.
 
 Pide confirmación antes de llamar ("¿Estás seguro? Esta acción es irreversible.").
 
@@ -198,8 +198,9 @@ Pide confirmación antes de llamar ("¿Estás seguro? Esta acción es irreversib
 | Oferta de otro productor | 403 | `No tienes permiso para modificar esta oferta.` |
 | Oferta inexistente | 404 | `La oferta no existe` |
 | La oferta tiene pedidos | 422 | `No puedes eliminar esta oferta porque tiene pedidos pendientes. Primero márcala como agotada.` |
+| La oferta tiene contactos de compradores (sin pedidos) | 422 | `No puedes eliminar esta oferta porque ya tiene contactos de compradores. Márcala como agotada.` |
 
-Cuando llegue el bloque B (US-19) se suma otro 422 para ofertas con contactos registrados: `No puedes eliminar esta oferta porque ya tiene contactos de compradores. Márcala como agotada.` Conviene mostrar el `mensaje` del 422 tal como llega, sin depender del texto exacto.
+Si la oferta tiene pedidos y contactos, llega el mensaje de pedidos. Conviene mostrar el `mensaje` del 422 tal como llega, sin depender del texto exacto.
 
 ---
 
@@ -231,6 +232,146 @@ Cuando llegue el bloque B (US-19) se suma otro 422 para ofertas con contactos re
 | DELETE oferta | Oferta ajena | 403 | `mensaje` | No tienes permiso para modificar esta oferta. |
 | DELETE oferta | Inexistente | 404 | `mensaje` | La oferta no existe |
 | DELETE oferta | Tiene pedidos | 422 | `mensaje` | No puedes eliminar esta oferta porque tiene pedidos pendientes. Primero márcala como agotada. |
+| DELETE oferta | Tiene contactos (sin pedidos) | 422 | `mensaje` | No puedes eliminar esta oferta porque ya tiene contactos de compradores. Márcala como agotada. |
 | Todos | Sin token | 401 | — | (sin cuerpo) |
+
+En todos los 400 con `errores`, `mensaje` es `La solicitud contiene campos inválidos`.
+
+---
+
+## Bloque B — US-19 Historial de contactos (AB#50) + backend de US-14 (AB#45) y US-15 (AB#46)
+
+### Resumen de endpoints
+
+| Método | Ruta | Rol | Éxito |
+| --- | --- | --- | --- |
+| POST | `/api/contactos` | COMPRADOR | 201 + `ContactoResponse` (sin header `Location`) |
+| GET | `/api/contactos/mios` | COMPRADOR | 200 + lista de `ContactoResponse` |
+
+US-14 (WhatsApp) y US-15 (Llamada) no tienen endpoints propios: los números salen de `productor` en el detalle de la oferta (`GET /api/ofertas/{id}`) y en el pedido (`GET /api/pedidos/{id}`), y el contacto se registra con `POST /api/contactos`.
+
+### Cómo registrar el contacto desde el frontend
+
+- Al presionar "Coordinar por WhatsApp" o "Llamar al productor", abre `wa.me` o `tel:` **y en paralelo** envía `POST /api/contactos`. No esperes la respuesta para abrir el enlace.
+- Si el registro falla (red, 422, lo que sea), **no se lo muestres al usuario**: el contacto ya ocurrió. A lo sumo, déjalo en la consola.
+- Muestra cada botón solo si `whatsappDisponible` / `llamadaDisponible` es `true`. Con esa regla el 422 de canal no debería ocurrir; si ocurre, es porque el productor cambió sus canales mientras el comprador tenía la página abierta.
+- Envía `pedidoId` cuando el contacto sale de la pantalla del pedido (checkout o detalle del pedido). Desde el detalle de la oferta, omítelo.
+
+### Enum nuevo
+
+| Enum | Valores | Uso |
+| --- | --- | --- |
+| `CanalContacto` | `WHATSAPP`, `LLAMADA` | `canal` del contacto. Mostrar como "WhatsApp" / "Llamada" |
+
+---
+
+### POST /api/contactos
+
+Registra un contacto del comprador autenticado con el productor de una oferta. La fecha la fija el backend. **Se registra aunque la oferta esté agotada.**
+
+No devuelve `Location` porque no existe `GET /api/contactos/{id}`; el historial se consulta en `/mios`.
+
+**Request**
+
+```json
+{
+  "ofertaId": "8f2d6c1e-4b7a-4f3e-9c2d-1a2b3c4d5e6f",
+  "canal": "WHATSAPP",
+  "pedidoId": "3c9a7e10-2f4b-4c1d-8e6a-5b7c9d0e1f23"
+}
+```
+
+| Campo | Tipo | Obligatorio | Reglas |
+| --- | --- | --- | --- |
+| `ofertaId` | UUID | Sí | La oferta debe existir (activa o agotada) |
+| `canal` | `CanalContacto` | Sí | El productor debe tener ese canal habilitado **y** con número |
+| `pedidoId` | UUID | No | Si llega, debe ser un pedido del mismo comprador sobre la misma oferta |
+
+**Response 201**
+
+```json
+{
+  "id": "b7e4c2a1-9d3f-4e6b-8a1c-2f3e4d5c6b7a",
+  "fechaContacto": "2026-11-05T15:00:00.123456",
+  "canal": "WHATSAPP",
+  "ofertaId": "8f2d6c1e-4b7a-4f3e-9c2d-1a2b3c4d5e6f",
+  "pedidoId": "3c9a7e10-2f4b-4c1d-8e6a-5b7c9d0e1f23",
+  "producto": "Tomate chonto",
+  "productorNombre": "María Gómez",
+  "fincaNombre": "Finca El Roble"
+}
+```
+
+- `producto` ya viene como texto para mostrar: el nombre visible del catálogo (`Tomate chonto`, `Café pergamino`…) o, si la oferta es `OTRO`, lo que escribió el productor en `productoOtro`.
+- `pedidoId` es `null` cuando el contacto no salió de un pedido.
+- No incluye números de contacto.
+- `fechaContacto` viene sin zona horaria, igual que en ofertas y pedidos (hora UTC del servidor).
+
+**Response 422 — canal no disponible**
+
+```json
+{
+  "timestamp": "2026-11-05T10:00:00.123",
+  "status": 422,
+  "error": "Unprocessable Entity",
+  "mensaje": "El productor no tiene habilitado este canal de contacto.",
+  "ruta": "/api/contactos"
+}
+```
+
+Un `canal` fuera del enum (p. ej. `"SMS"`) responde 400 con `mensaje: "El cuerpo de la solicitud no es un JSON válido"` y sin `errores`.
+
+---
+
+### GET /api/contactos/mios
+
+Historial del comprador autenticado, del más reciente al más antiguo, **sin paginar**. Solo trae los contactos propios.
+
+**Response 200**
+
+```json
+[
+  {
+    "id": "b7e4c2a1-9d3f-4e6b-8a1c-2f3e4d5c6b7a",
+    "fechaContacto": "2026-11-05T15:00:00.123456",
+    "canal": "LLAMADA",
+    "ofertaId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+    "pedidoId": null,
+    "producto": "Aguacate",
+    "productorNombre": "María Gómez",
+    "fincaNombre": "Finca El Roble"
+  },
+  {
+    "id": "c8f5d3b2-0e4a-4f7c-9b2d-3a4b5c6d7e8f",
+    "fechaContacto": "2026-11-04T21:30:00.654321",
+    "canal": "WHATSAPP",
+    "ofertaId": "8f2d6c1e-4b7a-4f3e-9c2d-1a2b3c4d5e6f",
+    "pedidoId": "3c9a7e10-2f4b-4c1d-8e6a-5b7c9d0e1f23",
+    "producto": "Tomate chonto",
+    "productorNombre": "María Gómez",
+    "fincaNombre": "Finca El Roble"
+  }
+]
+```
+
+Sin contactos responde `200` con `[]`. Ahí el frontend muestra "Aún no has contactado a ningún productor. Explora el catálogo." (US-19 Esc 3).
+
+---
+
+### Mensajes y códigos HTTP del bloque B
+
+| Endpoint | Caso | HTTP | Dónde llega | Mensaje |
+| --- | --- | --- | --- | --- |
+| POST contactos | Sin oferta | 400 | `errores.ofertaId` | Debes indicar la oferta contactada. |
+| POST contactos | Sin canal | 400 | `errores.canal` | Debes indicar el canal de contacto. |
+| POST contactos | Canal fuera del enum | 400 | `mensaje` | El cuerpo de la solicitud no es un JSON válido |
+| POST contactos | Usuario productor | 403 | `mensaje` | El rol del usuario no permite esta operación |
+| POST contactos | Oferta inexistente | 404 | `mensaje` | La oferta no existe |
+| POST contactos | Canal apagado o sin número | 422 | `mensaje` | El productor no tiene habilitado este canal de contacto. |
+| POST contactos | Pedido inexistente, de otro comprador o de otra oferta | 422 | `mensaje` | El pedido no corresponde a esta oferta. |
+| GET mios | Usuario productor | 403 | `mensaje` | El rol del usuario no permite esta operación |
+| Todos | Sin token | 401 | — | (sin cuerpo) |
+
+Orden de las validaciones del POST: formato (400) → oferta (404) → canal (422) → pedido (422).
 
 En todos los 400 con `errores`, `mensaje` es `La solicitud contiene campos inválidos`.

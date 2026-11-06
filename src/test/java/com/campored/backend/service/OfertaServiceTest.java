@@ -21,6 +21,7 @@ import com.campored.backend.exception.ReglaNegocioException;
 import com.campored.backend.exception.ResourceNotFoundException;
 import com.campored.backend.repository.OfertaRepository;
 import com.campored.backend.repository.PedidoRepository;
+import com.campored.backend.repository.RegistroContactoRepository;
 import com.campored.backend.repository.UsuarioRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -72,6 +73,9 @@ class OfertaServiceTest {
 
     @Mock
     private PedidoRepository pedidoRepository;
+
+    @Mock
+    private RegistroContactoRepository registroContactoRepository;
 
     @InjectMocks
     private OfertaService ofertaService;
@@ -283,7 +287,7 @@ class OfertaServiceTest {
         private final FiltroCatalogoOfertas sinFiltros = new FiltroCatalogoOfertas(null, null, null, null);
 
         private OfertaService servicioConReloj(Instant instante) {
-            return new OfertaService(ofertaRepository, usuarioRepository, pedidoRepository,
+            return new OfertaService(ofertaRepository, usuarioRepository, pedidoRepository, registroContactoRepository,
                     Clock.fixed(instante, ZONA_COLOMBIA));
         }
 
@@ -820,6 +824,35 @@ class OfertaServiceTest {
                     () -> ofertaService.eliminarOferta(oferta.getId(), productorId));
 
             assertEquals(OfertaService.MENSAJE_OFERTA_CON_PEDIDOS, ex.getMessage());
+            verify(ofertaRepository, never()).delete(any(Oferta.class));
+        }
+
+        @Test
+        @DisplayName("US-10 Esc 3 — una oferta con contactos y sin pedidos se bloquea con 422 y no se elimina")
+        void testEliminarOfertaConContactos() {
+            Oferta oferta = ofertaPropia();
+            when(pedidoRepository.existsByOfertaId(oferta.getId())).thenReturn(false);
+            when(registroContactoRepository.existsByOfertaId(oferta.getId())).thenReturn(true);
+
+            ReglaNegocioException ex = assertThrows(ReglaNegocioException.class,
+                    () -> ofertaService.eliminarOferta(oferta.getId(), productorId));
+
+            assertEquals(OfertaService.MENSAJE_OFERTA_CON_CONTACTOS, ex.getMessage());
+            verify(ofertaRepository, never()).delete(any(Oferta.class));
+        }
+
+        @Test
+        @DisplayName("US-10 Esc 3 — con pedidos y contactos responde el mensaje de pedidos")
+        void testEliminarOfertaConPedidosYContactos() {
+            Oferta oferta = ofertaPropia();
+            when(pedidoRepository.existsByOfertaId(oferta.getId())).thenReturn(true);
+            when(registroContactoRepository.existsByOfertaId(oferta.getId())).thenReturn(true);
+
+            ReglaNegocioException ex = assertThrows(ReglaNegocioException.class,
+                    () -> ofertaService.eliminarOferta(oferta.getId(), productorId));
+
+            assertEquals(OfertaService.MENSAJE_OFERTA_CON_PEDIDOS, ex.getMessage());
+            verifyNoInteractions(registroContactoRepository);
             verify(ofertaRepository, never()).delete(any(Oferta.class));
         }
 

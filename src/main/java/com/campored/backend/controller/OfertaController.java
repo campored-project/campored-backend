@@ -151,8 +151,8 @@ public class OfertaController {
     @DeleteMapping("/{id}")
     @Operation(summary = "Eliminar permanentemente una oferta del productor autenticado",
             description = "Borrado físico: la oferta desaparece del catálogo, del detalle y de mis-ofertas. "
-                    + "También se pueden eliminar ofertas agotadas. Si la oferta tiene pedidos se bloquea; "
-                    + "en ese caso el productor debe marcarla como agotada")
+                    + "También se pueden eliminar ofertas agotadas. Si la oferta tiene pedidos o contactos "
+                    + "de compradores se bloquea; en ese caso el productor debe marcarla como agotada")
     @ApiResponse(responseCode = "204", description = "Oferta eliminada", content = @Content)
     @ApiResponse(responseCode = "400", description = "El id no es un UUID válido",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
@@ -161,7 +161,7 @@ public class OfertaController {
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @ApiResponse(responseCode = "404", description = "La oferta no existe",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
-    @ApiResponse(responseCode = "422", description = "La oferta tiene pedidos",
+    @ApiResponse(responseCode = "422", description = "La oferta tiene pedidos o contactos registrados",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     public ResponseEntity<Void> eliminarOferta(@PathVariable UUID id, @AuthenticationPrincipal UUID productorId) {
         ofertaService.eliminarOferta(id, productorId);

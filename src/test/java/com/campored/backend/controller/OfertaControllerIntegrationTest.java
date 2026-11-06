@@ -2,6 +2,7 @@ package com.campored.backend.controller;
 
 import com.campored.backend.dto.CrearOfertaRequest;
 import com.campored.backend.dto.validation.OfertaValidator;
+import com.campored.backend.entity.CanalContacto;
 import com.campored.backend.entity.EstadoCultivo;
 import com.campored.backend.entity.Finca;
 import com.campored.backend.entity.Jornada;
@@ -11,12 +12,14 @@ import com.campored.backend.entity.Negocio;
 import com.campored.backend.entity.Oferta;
 import com.campored.backend.entity.Pedido;
 import com.campored.backend.entity.Producto;
+import com.campored.backend.entity.RegistroContacto;
 import com.campored.backend.entity.Rol;
 import com.campored.backend.entity.TipoNegocio;
 import com.campored.backend.entity.UnidadMedida;
 import com.campored.backend.entity.Usuario;
 import com.campored.backend.repository.OfertaRepository;
 import com.campored.backend.repository.PedidoRepository;
+import com.campored.backend.repository.RegistroContactoRepository;
 import com.campored.backend.repository.UsuarioRepository;
 import com.campored.backend.service.JwtService;
 import com.campored.backend.service.OfertaService;
@@ -92,6 +95,9 @@ class OfertaControllerIntegrationTest {
 
     @Autowired
     private PedidoRepository pedidoRepository;
+
+    @Autowired
+    private RegistroContactoRepository registroContactoRepository;
 
     @Autowired
     private JwtService jwtService;
@@ -1262,6 +1268,44 @@ class OfertaControllerIntegrationTest {
         Oferta oferta = publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
         conPedido(oferta);
         desactivar(oferta);
+
+        mockMvc.perform(delete(urlDetalle(oferta.getId())).with(autenticadoComo(productor)))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.mensaje").value(OfertaService.MENSAJE_OFERTA_CON_PEDIDOS));
+
+        assertTrue(ofertaRepository.existsById(oferta.getId()));
+    }
+
+    private void conContacto(Oferta ofertaContactada) {
+        RegistroContacto registro = new RegistroContacto();
+        registro.setComprador(comprador);
+        registro.setOferta(ofertaContactada);
+        registro.setCanal(CanalContacto.WHATSAPP);
+        registroContactoRepository.saveAndFlush(registro);
+    }
+
+    @Test
+    @DisplayName("US-10 Esc 3 — una oferta con contactos y sin pedidos responde 422 con el mensaje exacto y sigue en la BD")
+    void testEliminarOfertaConContactos() throws Exception {
+        Oferta oferta = publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+        conContacto(oferta);
+
+        mockMvc.perform(delete(urlDetalle(oferta.getId())).with(autenticadoComo(productor)))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.mensaje").value(OfertaService.MENSAJE_OFERTA_CON_CONTACTOS));
+
+        entityManager.flush();
+        entityManager.clear();
+        assertTrue(ofertaRepository.existsById(oferta.getId()));
+        assertEquals(1, registroContactoRepository.count());
+    }
+
+    @Test
+    @DisplayName("US-10 Esc 3 — con pedidos y contactos responde el mensaje de pedidos")
+    void testEliminarOfertaConPedidosYContactos() throws Exception {
+        Oferta oferta = publicar(productor, Producto.CAFE_PERGAMINO, ModalidadLogistica.AMBAS);
+        conPedido(oferta);
+        conContacto(oferta);
 
         mockMvc.perform(delete(urlDetalle(oferta.getId())).with(autenticadoComo(productor)))
                 .andExpect(status().isUnprocessableEntity())
