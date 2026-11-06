@@ -94,7 +94,8 @@ public class OfertaService {
         aplicarCamposEditables(oferta, request);
         oferta.setActiva(true);
 
-        Oferta guardada = ofertaRepository.save(oferta);
+        // saveAndFlush: @CreationTimestamp se asigna en el INSERT y la respuesta debe llevar fechaCreacion
+        Oferta guardada = ofertaRepository.saveAndFlush(oferta);
         log.info("Oferta {} publicada por el productor {}", guardada.getId(), productorId);
         return OfertaMapper.toResponse(guardada);
     }

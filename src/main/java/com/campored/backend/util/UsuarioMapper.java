@@ -20,7 +20,7 @@ public final class UsuarioMapper {
                 .canalWhatsappHabilitado(usuario.isCanalWhatsappHabilitado())
                 .canalLlamadaHabilitado(usuario.isCanalLlamadaHabilitado())
                 .rol(usuario.getRol())
-                .fechaRegistro(usuario.getFechaRegistro());
+                .fechaRegistro(FechaRespuesta.aColombia(usuario.getFechaRegistro()));
 
         Finca finca = usuario.getFinca();
         if (finca != null) {

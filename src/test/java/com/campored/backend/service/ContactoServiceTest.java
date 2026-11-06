@@ -26,6 +26,7 @@ import com.campored.backend.repository.OfertaRepository;
 import com.campored.backend.repository.PedidoRepository;
 import com.campored.backend.repository.RegistroContactoRepository;
 import com.campored.backend.repository.UsuarioRepository;
+import com.campored.backend.util.FechaRespuesta;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -170,7 +171,7 @@ class ContactoServiceTest {
             assertNull(guardado.getPedido());
 
             assertEquals(guardado.getId(), respuesta.id());
-            assertEquals(FECHA_CONTACTO, respuesta.fechaContacto());
+            assertEquals(FechaRespuesta.aColombia(FECHA_CONTACTO), respuesta.fechaContacto());
             assertEquals(CanalContacto.WHATSAPP, respuesta.canal());
             assertEquals(oferta.getId(), respuesta.ofertaId());
             assertNull(respuesta.pedidoId());

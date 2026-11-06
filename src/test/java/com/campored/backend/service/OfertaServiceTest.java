@@ -112,7 +112,7 @@ class OfertaServiceTest {
     }
 
     private void simularGuardado() {
-        when(ofertaRepository.save(any(Oferta.class))).thenAnswer(invocacion -> {
+        when(ofertaRepository.saveAndFlush(any(Oferta.class))).thenAnswer(invocacion -> {
             Oferta oferta = invocacion.getArgument(0);
             oferta.setId(UUID.randomUUID());
             return oferta;
@@ -129,7 +129,7 @@ class OfertaServiceTest {
         OfertaResponse respuesta = ofertaService.crearOferta(productorId, request);
 
         ArgumentCaptor<Oferta> captor = ArgumentCaptor.forClass(Oferta.class);
-        verify(ofertaRepository).save(captor.capture());
+        verify(ofertaRepository).saveAndFlush(captor.capture());
         Oferta guardada = captor.getValue();
         assertSame(productor, guardada.getProductor());
         assertSame(finca, guardada.getFinca());
@@ -183,7 +183,7 @@ class OfertaServiceTest {
         OfertaResponse respuesta = ofertaService.crearOferta(productorId, request);
 
         ArgumentCaptor<Oferta> captor = ArgumentCaptor.forClass(Oferta.class);
-        verify(ofertaRepository).save(captor.capture());
+        verify(ofertaRepository).saveAndFlush(captor.capture());
         assertNull(captor.getValue().getFechaEstimadaCosecha());
         assertNull(respuesta.getFechaEstimadaCosecha());
         assertEquals(EstadoCultivo.DISPONIBLE, respuesta.getEstadoCultivo());
@@ -201,7 +201,7 @@ class OfertaServiceTest {
                 () -> ofertaService.crearOferta(productorId, requestBase().build()));
 
         assertEquals(OfertaService.MENSAJE_PRODUCTOR_SIN_FINCA, ex.getMessage());
-        verify(ofertaRepository, never()).save(any());
+        verify(ofertaRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -211,7 +211,7 @@ class OfertaServiceTest {
 
         assertThrows(ResourceNotFoundException.class,
                 () -> ofertaService.crearOferta(productorId, requestBase().build()));
-        verify(ofertaRepository, never()).save(any());
+        verify(ofertaRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -222,7 +222,7 @@ class OfertaServiceTest {
 
         assertThrows(ResourceNotFoundException.class,
                 () -> ofertaService.crearOferta(productorId, requestBase().build()));
-        verify(ofertaRepository, never()).save(any());
+        verify(ofertaRepository, never()).saveAndFlush(any());
     }
 
     private Oferta ofertaGuardada(Producto producto) {

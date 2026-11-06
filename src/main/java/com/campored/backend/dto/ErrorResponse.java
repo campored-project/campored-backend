@@ -1,12 +1,13 @@
 package com.campored.backend.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.Map;
 
 @Data
@@ -16,7 +17,8 @@ import java.util.Map;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ErrorResponse {
 
-    private LocalDateTime timestamp;
+    @Schema(description = "Momento del error en hora de Colombia", example = "2026-11-05T20:28:30.108422-05:00")
+    private OffsetDateTime timestamp;
     private int status;
     private String error;
     private String mensaje;

@@ -2,6 +2,7 @@ package com.campored.backend.exception;
 
 import com.campored.backend.dto.ErrorResponse;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -16,19 +17,24 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
-import java.time.LocalDateTime;
+import java.time.Clock;
+import java.time.OffsetDateTime;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestControllerAdvice
+@RequiredArgsConstructor
 public class GlobalExceptionHandler {
 
     // Compartido por @Valid y por los errores de negocio por campo (US-18) para que el frontend los trate igual
     public static final String MENSAJE_CAMPOS_INVALIDOS = "La solicitud contiene campos inválidos";
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    // US-22: el Clock de TimeConfig (America/Bogota) da el timestamp con el offset de Colombia
+    private final Clock clock;
 
     @ExceptionHandler(ResourceAlreadyExistsException.class)
     public ResponseEntity<ErrorResponse> handleResourceAlreadyExists(ResourceAlreadyExistsException ex,
@@ -129,7 +135,7 @@ public class GlobalExceptionHandler {
     private ResponseEntity<ErrorResponse> construir(HttpStatus status, String mensaje,
                                                     HttpServletRequest request, Map<String, String> errores) {
         ErrorResponse body = ErrorResponse.builder()
-                .timestamp(LocalDateTime.now())
+                .timestamp(OffsetDateTime.now(clock))
                 .status(status.value())
                 .error(status.getReasonPhrase())
                 .mensaje(mensaje)
