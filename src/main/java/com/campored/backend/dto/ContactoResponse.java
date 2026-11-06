@@ -9,14 +9,15 @@ package com.campored.backend.dto;
 import com.campored.backend.entity.CanalContacto;
 import io.swagger.v3.oas.annotations.media.Schema;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 // Sin números de contacto: el historial solo recuerda a quién se contactó y por qué canal
 @Schema(description = "Contacto registrado por el comprador")
 public record ContactoResponse(
         UUID id,
-        LocalDateTime fechaContacto,
+        @Schema(description = "Fecha y hora del contacto en hora de Colombia", example = "2026-11-05T20:28:22.267774-05:00")
+        OffsetDateTime fechaContacto,
         @Schema(example = "WHATSAPP") CanalContacto canal,
         UUID ofertaId,
         @Schema(nullable = true) UUID pedidoId,

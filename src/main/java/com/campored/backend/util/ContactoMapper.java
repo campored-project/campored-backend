@@ -23,7 +23,7 @@ public final class ContactoMapper {
         Pedido pedido = registro.getPedido();
         return new ContactoResponse(
                 registro.getId(),
-                registro.getFechaContacto(),
+                FechaRespuesta.aColombia(registro.getFechaContacto()),
                 registro.getCanal(),
                 oferta.getId(),
                 pedido == null ? null : pedido.getId(),

@@ -3,12 +3,13 @@ package com.campored.backend.dto;
 import com.campored.backend.entity.Municipio;
 import com.campored.backend.entity.Rol;
 import com.campored.backend.entity.TipoNegocio;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Data
@@ -33,5 +34,6 @@ public class UsuarioResponse {
     private String direccion;
     private String horarioRecepcion;
     private String notasAcceso;
-    private LocalDateTime fechaRegistro;
+    @Schema(description = "Fecha y hora de registro en hora de Colombia", example = "2026-11-05T20:27:43.501287-05:00")
+    private OffsetDateTime fechaRegistro;
 }

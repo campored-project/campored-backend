@@ -24,7 +24,7 @@ public final class PedidoMapper {
         return new PedidoResponse(
                 pedido.getId(),
                 pedido.getEstado(),
-                pedido.getFechaCreacion(),
+                FechaRespuesta.aColombia(pedido.getFechaCreacion()),
                 pedido.getCantidadSolicitada(),
                 pedido.getPrecioUnitario(),
                 pedido.getPrecioTotalEstimado(),

@@ -30,6 +30,7 @@ import com.campored.backend.exception.ResourceNotFoundException;
 import com.campored.backend.repository.OfertaRepository;
 import com.campored.backend.repository.PedidoRepository;
 import com.campored.backend.repository.UsuarioRepository;
+import com.campored.backend.util.FechaRespuesta;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -209,7 +210,7 @@ class PedidoServiceTest {
             assertEquals(Jornada.MANANA, respuesta.jornada());
             assertEquals(ModalidadLogistica.DESPACHO_PRODUCTOR, respuesta.modalidadEntrega());
             assertEquals("Entrada por la puerta de carga", respuesta.notasAcceso());
-            assertEquals(LocalDateTime.of(2026, 11, 5, 10, 0), respuesta.fechaCreacion());
+            assertEquals(FechaRespuesta.aColombia(LocalDateTime.of(2026, 11, 5, 10, 0)), respuesta.fechaCreacion());
 
             assertEquals(oferta.getId(), respuesta.oferta().id());
             assertEquals(Producto.TOMATE_CHONTO, respuesta.oferta().producto());

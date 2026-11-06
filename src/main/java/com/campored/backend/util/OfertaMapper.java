@@ -40,7 +40,7 @@ public final class OfertaMapper {
                 .modalidadLogistica(oferta.getModalidadLogistica())
                 .activa(oferta.isActiva())
                 .estadoPublicacion(estadoPublicacion(oferta))
-                .fechaCreacion(oferta.getFechaCreacion())
+                .fechaCreacion(FechaRespuesta.aColombia(oferta.getFechaCreacion()))
                 .fincaId(finca.getId())
                 .fincaNombre(finca.getNombreFinca())
                 .municipio(finca.getMunicipio())
@@ -66,7 +66,7 @@ public final class OfertaMapper {
                 oferta.getFechaEstimadaCosecha(),
                 diasRestantesCosecha(oferta, hoy),
                 oferta.getModalidadLogistica(),
-                oferta.getFechaCreacion(),
+                FechaRespuesta.aColombia(oferta.getFechaCreacion()),
                 toFincaPublica(oferta.getFinca()));
     }
 
@@ -89,7 +89,7 @@ public final class OfertaMapper {
                 oferta.getFechaEstimadaCosecha(),
                 diasRestantesCosecha(oferta, hoy),
                 oferta.getModalidadLogistica(),
-                oferta.getFechaCreacion(),
+                FechaRespuesta.aColombia(oferta.getFechaCreacion()),
                 estadoPublicacion(oferta),
                 toFincaPublica(oferta.getFinca()),
                 toProductorPublico(oferta.getProductor(), incluirContacto));

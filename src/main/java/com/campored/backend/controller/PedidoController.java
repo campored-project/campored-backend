@@ -84,6 +84,8 @@ public class PedidoController {
     @ApiResponse(responseCode = "401", description = "Token ausente, inválido o expirado", content = @Content)
     @ApiResponse(responseCode = "403", description = "El usuario autenticado no es productor",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "404", description = "El perfil del productor del token ya no existe",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     public List<PedidoResponse> listarRecibidos(@AuthenticationPrincipal UUID productorId) {
         return pedidoService.listarRecibidos(productorId);
     }

@@ -16,7 +16,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 // Solo lo ven el comprador dueño y el productor de la oferta; por eso viajan los números de ambos
@@ -24,7 +24,8 @@ import java.util.UUID;
 public record PedidoResponse(
         UUID id,
         @Schema(example = "SOLICITADO") EstadoPedido estado,
-        LocalDateTime fechaCreacion,
+        @Schema(description = "Fecha y hora de creación en hora de Colombia", example = "2026-11-05T20:28:07.616432-05:00")
+        OffsetDateTime fechaCreacion,
         @Schema(example = "120.00") BigDecimal cantidadSolicitada,
         @Schema(description = "Precio de la oferta en el momento del pedido", example = "3500.00")
         BigDecimal precioUnitario,

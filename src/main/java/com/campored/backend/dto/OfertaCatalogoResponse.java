@@ -14,7 +14,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Schema(description = "Oferta resumida para el listado del catálogo")
@@ -31,7 +31,8 @@ public record OfertaCatalogoResponse(
                 example = "10", nullable = true)
         Integer diasRestantesCosecha,
         ModalidadLogistica modalidadLogistica,
-        @Schema(description = "Fecha de publicación de la oferta")
-        LocalDateTime fechaCreacion,
+        @Schema(description = "Fecha y hora de publicación de la oferta en hora de Colombia",
+                example = "2026-11-05T20:27:55.120934-05:00")
+        OffsetDateTime fechaCreacion,
         FincaPublicaResponse finca) {
 }

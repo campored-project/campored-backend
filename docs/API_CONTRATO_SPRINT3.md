@@ -9,7 +9,23 @@ Convenciones generales (iguales al Sprint 2):
 - Token en `Authorization: Bearer <token>`.
 - **401** llega **sin cuerpo** (token ausente, inválido o expirado).
 - Los demás errores usan `ErrorResponse`: `{ timestamp, status, error, mensaje, ruta, errores? }`. `errores` es un mapa `campo → mensaje` y solo aparece cuando hay errores por campo.
-- Fechas `LocalDate` como `"2026-11-20"`. Montos y cantidades como número decimal (`420000.00`).
+- Fechas `LocalDate` como `"2026-11-20"`. Fechas con hora con el offset de Colombia (ver [Formato de fechas](#formato-de-fechas)). Montos y cantidades como número decimal (`420000.00`).
+- Un token válido de un usuario que ya no existe responde **404** `Perfil de usuario no encontrado` en `POST /api/pedidos`, `POST /api/contactos` y `GET /api/pedidos/recibidos`.
+
+### Formato de fechas
+
+Todas las fechas con hora del API salen en **hora de Colombia con offset explícito** (`-05:00`), en formato ISO 8601:
+
+| Campo | Dónde aparece |
+| --- | --- |
+| `fechaCreacion` | pedidos, ofertas (crear, editar, agotar, mis-ofertas, catálogo y detalle) |
+| `fechaContacto` | contactos |
+| `fechaRegistro` | `usuario` del login, del registro y de los PATCH de perfil |
+| `timestamp` | todas las respuestas de error (`ErrorResponse`) |
+
+Ejemplo: `"fechaCreacion": "2026-11-05T20:28:07.616432-05:00"`. La parte fraccionaria puede traer entre 0 y 9 dígitos.
+
+**Nota para el frontend:** `new Date(valor)` interpreta bien estas cadenas porque traen el offset. **No hay que concatenar `Z`**: eso movería la hora cinco horas. Para mostrarlas, formatea con `toLocaleString("es-CO", { timeZone: "America/Bogota" })` o `Intl.DateTimeFormat` con esa zona. Las fechas sin hora (`fechaPreferida`, `fechaEstimadaCosecha`) siguen como `"2026-11-20"`, sin offset.
 
 ---
 
@@ -88,7 +104,7 @@ Crea el pedido. El comprador sale del token. `precioUnitario` se copia de la ofe
 {
   "id": "3c9a7e10-2f4b-4c1d-8e6a-5b7c9d0e1f23",
   "estado": "SOLICITADO",
-  "fechaCreacion": "2026-11-05T15:00:00.123456",
+  "fechaCreacion": "2026-11-05T15:00:00.123456-05:00",
   "cantidadSolicitada": 120.00,
   "precioUnitario": 3500.00,
   "precioTotalEstimado": 420000.00,
@@ -122,7 +138,7 @@ Crea el pedido. El comprador sale del token. `precioUnitario` se copia de la ofe
 }
 ```
 
-- `fechaCreacion` viene sin zona horaria, igual que en ofertas (hora UTC del servidor).
+- `fechaCreacion` viene en hora de Colombia con offset (`-05:00`); ver [Formato de fechas](#formato-de-fechas).
 - Si `oferta.producto` es `OTRO`, el nombre a mostrar está en `oferta.productoOtro`.
 - `productor`: `whatsappDisponible` / `llamadaDisponible` son `true` solo si el productor habilitó el canal **y** tiene número. Los números (`whatsappContacto`, `telefonoContacto`) solo vienen cuando el canal correspondiente está disponible; si no, `null`. Son los datos para los botones de WhatsApp / Llamada (US-14 / US-15).
 - `comprador.nombreNegocio`, `whatsapp` y `telefono` pueden ser `null`.
@@ -135,7 +151,7 @@ Primero se valida el formato. Si hay errores de formato, responde con esos. Si e
 
 ```json
 {
-  "timestamp": "2026-11-05T10:00:00.123",
+  "timestamp": "2026-11-05T10:00:00.123-05:00",
   "status": 400,
   "error": "Bad Request",
   "mensaje": "La solicitud contiene campos inválidos",
@@ -292,7 +308,7 @@ No devuelve `Location` porque no existe `GET /api/contactos/{id}`; el historial 
 ```json
 {
   "id": "b7e4c2a1-9d3f-4e6b-8a1c-2f3e4d5c6b7a",
-  "fechaContacto": "2026-11-05T15:00:00.123456",
+  "fechaContacto": "2026-11-05T15:00:00.123456-05:00",
   "canal": "WHATSAPP",
   "ofertaId": "8f2d6c1e-4b7a-4f3e-9c2d-1a2b3c4d5e6f",
   "pedidoId": "3c9a7e10-2f4b-4c1d-8e6a-5b7c9d0e1f23",
@@ -305,13 +321,13 @@ No devuelve `Location` porque no existe `GET /api/contactos/{id}`; el historial 
 - `producto` ya viene como texto para mostrar: el nombre visible del catálogo (`Tomate chonto`, `Café pergamino`…) o, si la oferta es `OTRO`, lo que escribió el productor en `productoOtro`.
 - `pedidoId` es `null` cuando el contacto no salió de un pedido.
 - No incluye números de contacto.
-- `fechaContacto` viene sin zona horaria, igual que en ofertas y pedidos (hora UTC del servidor).
+- `fechaContacto` viene en hora de Colombia con offset (`-05:00`); ver [Formato de fechas](#formato-de-fechas).
 
 **Response 422 — canal no disponible**
 
 ```json
 {
-  "timestamp": "2026-11-05T10:00:00.123",
+  "timestamp": "2026-11-05T10:00:00.123-05:00",
   "status": 422,
   "error": "Unprocessable Entity",
   "mensaje": "El productor no tiene habilitado este canal de contacto.",
@@ -333,7 +349,7 @@ Historial del comprador autenticado, del más reciente al más antiguo, **sin pa
 [
   {
     "id": "b7e4c2a1-9d3f-4e6b-8a1c-2f3e4d5c6b7a",
-    "fechaContacto": "2026-11-05T15:00:00.123456",
+    "fechaContacto": "2026-11-05T15:00:00.123456-05:00",
     "canal": "LLAMADA",
     "ofertaId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
     "pedidoId": null,
@@ -343,7 +359,7 @@ Historial del comprador autenticado, del más reciente al más antiguo, **sin pa
   },
   {
     "id": "c8f5d3b2-0e4a-4f7c-9b2d-3a4b5c6d7e8f",
-    "fechaContacto": "2026-11-04T21:30:00.654321",
+    "fechaContacto": "2026-11-04T21:30:00.654321-05:00",
     "canal": "WHATSAPP",
     "ofertaId": "8f2d6c1e-4b7a-4f3e-9c2d-1a2b3c4d5e6f",
     "pedidoId": "3c9a7e10-2f4b-4c1d-8e6a-5b7c9d0e1f23",
@@ -365,6 +381,7 @@ Sin contactos responde `200` con `[]`. Ahí el frontend muestra "Aún no has con
 | POST contactos | Sin oferta | 400 | `errores.ofertaId` | Debes indicar la oferta contactada. |
 | POST contactos | Sin canal | 400 | `errores.canal` | Debes indicar el canal de contacto. |
 | POST contactos | Canal fuera del enum | 400 | `mensaje` | El cuerpo de la solicitud no es un JSON válido |
+| POST contactos | `ofertaId` o `pedidoId` que no es un UUID | 400 | `mensaje` | El cuerpo de la solicitud no es un JSON válido |
 | POST contactos | Usuario productor | 403 | `mensaje` | El rol del usuario no permite esta operación |
 | POST contactos | Oferta inexistente | 404 | `mensaje` | La oferta no existe |
 | POST contactos | Canal apagado o sin número | 422 | `mensaje` | El productor no tiene habilitado este canal de contacto. |
@@ -406,7 +423,7 @@ Cada elemento es el **mismo `PedidoResponse`** de US-18 (ver Bloque A). Para el 
   {
     "id": "5d1e2f3a-4b5c-4d6e-8f7a-9b0c1d2e3f4a",
     "estado": "SOLICITADO",
-    "fechaCreacion": "2026-11-05T16:20:00.123456",
+    "fechaCreacion": "2026-11-05T16:20:00.123456-05:00",
     "cantidadSolicitada": 30.00,
     "precioUnitario": 52000.00,
     "precioTotalEstimado": 1560000.00,
@@ -441,7 +458,7 @@ Cada elemento es el **mismo `PedidoResponse`** de US-18 (ver Bloque A). Para el 
   {
     "id": "3c9a7e10-2f4b-4c1d-8e6a-5b7c9d0e1f23",
     "estado": "SOLICITADO",
-    "fechaCreacion": "2026-11-05T15:00:00.123456",
+    "fechaCreacion": "2026-11-05T15:00:00.123456-05:00",
     "cantidadSolicitada": 120.00,
     "precioUnitario": 3500.00,
     "precioTotalEstimado": 420000.00,
@@ -487,6 +504,7 @@ Cada elemento es el **mismo `PedidoResponse`** de US-18 (ver Bloque A). Para el 
 | Lista (con o sin pedidos) | 200 | — |
 | Sin token | 401 | (sin cuerpo) |
 | Usuario comprador | 403 | `El rol del usuario no permite esta operación` |
+| Perfil del token inexistente | 404 | `Perfil de usuario no encontrado` |
 
 ---
 
@@ -513,7 +531,7 @@ Solo se modifican los campos enviados. Con este cambio, en todas las ofertas del
 
 ```json
 {
-  "timestamp": "2026-11-05T10:00:00.123",
+  "timestamp": "2026-11-05T10:00:00.123-05:00",
   "status": 400,
   "error": "Bad Request",
   "mensaje": "La solicitud contiene campos inválidos",
