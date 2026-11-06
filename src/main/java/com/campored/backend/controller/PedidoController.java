@@ -29,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.net.URI;
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -64,6 +65,27 @@ public class PedidoController {
                 .buildAndExpand(pedido.id())
                 .toUri();
         return ResponseEntity.created(ubicacion).body(pedido);
+    }
+
+    // ============================================================
+    // FEATURE: US-23 — Pedidos Recibidos del Productor (Sprint 3)
+    // Autor: Cristian Diez
+    // Fecha: 2026-11-05
+    // Descripción: Pedidos sobre las ofertas del productor autenticado para su panel
+    // ============================================================
+    // Spring prioriza la ruta literal sobre /{id}: "recibidos" nunca llega a obtenerPedido como UUID inválido
+    @GetMapping("/recibidos")
+    @PreAuthorize("hasRole('PRODUCTOR')")
+    @Operation(summary = "Listar los pedidos recibidos en las ofertas del productor autenticado",
+            description = "Del más reciente al más antiguo, sin paginar. Incluye los pedidos de ofertas agotadas y "
+                    + "el contacto de cada comprador. Lista vacía si no hay pedidos. El contador de pendientes se "
+                    + "calcula en el cliente con el tamaño de la lista")
+    @ApiResponse(responseCode = "200", description = "Pedidos recibidos")
+    @ApiResponse(responseCode = "401", description = "Token ausente, inválido o expirado", content = @Content)
+    @ApiResponse(responseCode = "403", description = "El usuario autenticado no es productor",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    public List<PedidoResponse> listarRecibidos(@AuthenticationPrincipal UUID productorId) {
+        return pedidoService.listarRecibidos(productorId);
     }
 
     @GetMapping("/{id}")
