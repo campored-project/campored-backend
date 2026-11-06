@@ -375,3 +375,168 @@ Sin contactos responde `200` con `[]`. Ahí el frontend muestra "Aún no has con
 Orden de las validaciones del POST: formato (400) → oferta (404) → canal (422) → pedido (422).
 
 En todos los 400 con `errores`, `mensaje` es `La solicitud contiene campos inválidos`.
+
+---
+
+## Bloque C — US-23 Pedidos recibidos (AB#54) + US-17 Canales de contacto (AB#47)
+
+### Resumen de endpoints
+
+| Método | Ruta | Rol | Éxito |
+| --- | --- | --- | --- |
+| GET | `/api/pedidos/recibidos` | PRODUCTOR | 200 + lista de `PedidoResponse` |
+| PATCH | `/api/usuarios/perfil/productor` | PRODUCTOR | 200 + `UsuarioResponse` (endpoint existente de US-04; cambian los mensajes de error) |
+
+No existe `/api/usuarios/perfil/contacto`: los canales se configuran con `PATCH /api/usuarios/perfil/productor`.
+
+---
+
+### GET /api/pedidos/recibidos
+
+Pedidos hechos sobre las ofertas del productor autenticado, del más reciente al más antiguo, **sin paginar**. Incluye pedidos de ofertas ya agotadas. Un productor nunca ve pedidos de ofertas de otro.
+
+Cada elemento es el **mismo `PedidoResponse`** de US-18 (ver Bloque A). Para el panel, los datos del comprador vienen en `comprador { nombre, nombreNegocio, whatsapp, telefono }` y los de entrega en `direccionEntrega`, `municipioEntrega`, `fechaPreferida`, `jornada`, `modalidadEntrega` y `notasAcceso`.
+
+**Contador "Pedidos pendientes":** no hay endpoint de conteo. Calcúlalo en el cliente con `respuesta.length`: en el MVP todos los pedidos están en `SOLICITADO` y no se pueden aceptar, entregar ni cancelar.
+
+**Response 200 — con pedidos**
+
+```json
+[
+  {
+    "id": "5d1e2f3a-4b5c-4d6e-8f7a-9b0c1d2e3f4a",
+    "estado": "SOLICITADO",
+    "fechaCreacion": "2026-11-05T16:20:00.123456",
+    "cantidadSolicitada": 30.00,
+    "precioUnitario": 52000.00,
+    "precioTotalEstimado": 1560000.00,
+    "direccionEntrega": "Carrera 50 # 45-10",
+    "municipioEntrega": "LA_CEJA",
+    "fechaPreferida": "2026-11-12",
+    "jornada": "TARDE",
+    "modalidadEntrega": "RECOGIDA_FINCA",
+    "notasAcceso": null,
+    "oferta": {
+      "id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+      "producto": "AGUACATE",
+      "productoOtro": null,
+      "unidadMedida": "ARROBA",
+      "fincaNombre": "Finca El Roble",
+      "municipio": "SONSON"
+    },
+    "productor": {
+      "nombreCompleto": "María Gómez",
+      "whatsappDisponible": true,
+      "llamadaDisponible": false,
+      "whatsappContacto": "+573109876543",
+      "telefonoContacto": null
+    },
+    "comprador": {
+      "nombre": "Andrés Mejía",
+      "nombreNegocio": "La Parrilla",
+      "whatsapp": "+573157778899",
+      "telefono": null
+    }
+  },
+  {
+    "id": "3c9a7e10-2f4b-4c1d-8e6a-5b7c9d0e1f23",
+    "estado": "SOLICITADO",
+    "fechaCreacion": "2026-11-05T15:00:00.123456",
+    "cantidadSolicitada": 120.00,
+    "precioUnitario": 3500.00,
+    "precioTotalEstimado": 420000.00,
+    "direccionEntrega": "Calle 49 # 50-21, local 3",
+    "municipioEntrega": "RIONEGRO",
+    "fechaPreferida": "2026-11-20",
+    "jornada": "MANANA",
+    "modalidadEntrega": "DESPACHO_PRODUCTOR",
+    "notasAcceso": "Entrada por la puerta de carga, preguntar por Laura",
+    "oferta": {
+      "id": "8f2d6c1e-4b7a-4f3e-9c2d-1a2b3c4d5e6f",
+      "producto": "TOMATE_CHONTO",
+      "productoOtro": null,
+      "unidadMedida": "KILOGRAMO",
+      "fincaNombre": "Finca El Roble",
+      "municipio": "SONSON"
+    },
+    "productor": {
+      "nombreCompleto": "María Gómez",
+      "whatsappDisponible": true,
+      "llamadaDisponible": false,
+      "whatsappContacto": "+573109876543",
+      "telefonoContacto": null
+    },
+    "comprador": {
+      "nombre": "Laura Restrepo",
+      "nombreNegocio": "Restaurante El Fogón",
+      "whatsapp": "+573201112233",
+      "telefono": "+576045551234"
+    }
+  }
+]
+```
+
+**Response 200 — sin pedidos**
+
+```json
+[]
+```
+
+| Caso | HTTP | `mensaje` |
+| --- | --- | --- |
+| Lista (con o sin pedidos) | 200 | — |
+| Sin token | 401 | (sin cuerpo) |
+| Usuario comprador | 403 | `El rol del usuario no permite esta operación` |
+
+---
+
+### PATCH /api/usuarios/perfil/productor — canales de contacto (US-17)
+
+El endpoint ya existía (US-04). Este bloque solo cambia dos cosas:
+
+1. Los mensajes al habilitar un canal sin número son los del BDD.
+2. Ese error **siempre** llega por campo en `errores.whatsapp` / `errores.telefono`, también cuando el número no viene en la petición y el productor no tiene uno guardado. Antes ese caso llegaba solo en `mensaje`.
+
+**Request — Esc 1: activar WhatsApp con número y apagar la llamada**
+
+```json
+{
+  "whatsapp": "+573109876543",
+  "canalWhatsappHabilitado": true,
+  "canalLlamadaHabilitado": false
+}
+```
+
+Solo se modifican los campos enviados. Con este cambio, en todas las ofertas del productor `whatsappDisponible` es `true` y `llamadaDisponible` es `false`, y los compradores solo reciben `whatsappContacto`.
+
+**Response 400 — Esc 2: activar WhatsApp sin número**
+
+```json
+{
+  "timestamp": "2026-11-05T10:00:00.123",
+  "status": 400,
+  "error": "Bad Request",
+  "mensaje": "La solicitud contiene campos inválidos",
+  "ruta": "/api/usuarios/perfil/productor",
+  "errores": {
+    "whatsapp": "Debes ingresar un número de WhatsApp para habilitar este canal."
+  }
+}
+```
+
+El cambio no se guarda. Si fallan los dos canales, llegan `errores.telefono` y `errores.whatsapp` en la misma respuesta.
+
+**Esc 3: ningún canal activo.** Enviar `canalWhatsappHabilitado: false` y `canalLlamadaHabilitado: false` responde 200 y se guarda. El aviso lo pinta el frontend cuando los dos quedan en `false`:
+
+> Los compradores no podrán contactarte hasta que actives al menos un canal.
+
+| Caso | HTTP | Dónde llega | Mensaje |
+| --- | --- | --- | --- |
+| WhatsApp habilitado sin número (vacío en la petición o sin número guardado) | 400 | `errores.whatsapp` | Debes ingresar un número de WhatsApp para habilitar este canal. |
+| Llamada habilitada sin teléfono (vacío en la petición o sin número guardado) | 400 | `errores.telefono` | Debes ingresar un número de teléfono para habilitar este canal. |
+| Teléfono o WhatsApp con formato inválido | 400 | `errores.telefono` / `errores.whatsapp` | El teléfono debe tener entre 10 y 13 dígitos / El WhatsApp debe tener entre 10 y 13 dígitos |
+| Ambos canales apagados | 200 | — | (aviso del frontend) |
+| Sin token | 401 | — | (sin cuerpo) |
+| Usuario comprador | 403 | `mensaje` | El rol del usuario no permite esta operación |
+
+En todos los 400 con `errores`, `mensaje` es `La solicitud contiene campos inválidos`.
