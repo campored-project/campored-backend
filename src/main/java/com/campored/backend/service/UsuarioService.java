@@ -17,6 +17,7 @@ import com.campored.backend.entity.Negocio;
 import com.campored.backend.entity.Rol;
 import com.campored.backend.entity.TipoNegocio;
 import com.campored.backend.entity.Usuario;
+import com.campored.backend.exception.GlobalExceptionHandler;
 import com.campored.backend.exception.InvalidInputException;
 import com.campored.backend.exception.ResourceAlreadyExistsException;
 import com.campored.backend.exception.ResourceNotFoundException;
@@ -29,7 +30,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -140,12 +143,24 @@ public class UsuarioService {
                 .orElseThrow(() -> new ResourceNotFoundException("Perfil de usuario no encontrado"));
     }
 
+    // ============================================================
+    // FEATURE: US-17 — Canales de Contacto del Productor (Sprint 3)
+    // Autor: Cristian Diez
+    // Fecha: 2026-11-05
+    // Descripción: Errores por campo al habilitar un canal sin número, igual que CanalesContactoValidator
+    // ============================================================
+    // Mismas claves que CanalesContactoValidator para que el frontend pinte el error bajo el mismo input,
+    // venga de @Valid (número borrado en la petición) o de aquí (número guardado vacío)
     private void validarCanalesContacto(Usuario productor) {
+        Map<String, String> errores = new LinkedHashMap<>();
         if (productor.isCanalLlamadaHabilitado() && estaVacio(productor.getTelefono())) {
-            throw new InvalidInputException(ActualizarPerfilProductorRequest.MENSAJE_TELEFONO_REQUERIDO);
+            errores.put("telefono", ActualizarPerfilProductorRequest.MENSAJE_TELEFONO_REQUERIDO);
         }
         if (productor.isCanalWhatsappHabilitado() && estaVacio(productor.getWhatsapp())) {
-            throw new InvalidInputException(ActualizarPerfilProductorRequest.MENSAJE_WHATSAPP_REQUERIDO);
+            errores.put("whatsapp", ActualizarPerfilProductorRequest.MENSAJE_WHATSAPP_REQUERIDO);
+        }
+        if (!errores.isEmpty()) {
+            throw new InvalidInputException(GlobalExceptionHandler.MENSAJE_CAMPOS_INVALIDOS, errores);
         }
     }
 

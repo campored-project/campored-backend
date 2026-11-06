@@ -38,6 +38,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -46,9 +47,15 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.sql.Timestamp;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.everyItem;
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -86,6 +93,9 @@ class PedidoControllerIntegrationTest {
 
     @Autowired
     private EntityManager entityManager;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     private Usuario productor;
     private Usuario comprador;
@@ -495,6 +505,127 @@ class PedidoControllerIntegrationTest {
         Pedido pedido = pedidoGuardado(comprador, oferta);
 
         mockMvc.perform(get(URL_PEDIDOS + "/" + pedido.getId()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    // ============================================================
+    // FEATURE: US-23 — Pedidos Recibidos del Productor (Sprint 3)
+    // Autor: Cristian Diez
+    // Fecha: 2026-11-05
+    // Descripción: GET /api/pedidos/recibidos con JWT reales: orden, aislamiento entre productores y roles
+    // ============================================================
+    private static final String URL_RECIBIDOS = URL_PEDIDOS + "/recibidos";
+
+    // fecha_creacion no es actualizable desde la entidad; se fija por SQL para que el orden sea determinista
+    private Pedido pedidoHaceHoras(Usuario dueno, Oferta ofertaPedida, int horas) {
+        Pedido pedido = pedidoGuardado(dueno, ofertaPedida);
+        jdbcTemplate.update("UPDATE pedidos SET fecha_creacion = ? WHERE id = ?",
+                Timestamp.valueOf(LocalDateTime.now().minusHours(horas)), pedido.getId());
+        return pedido;
+    }
+
+    @Test
+    @DisplayName("US-23 Esc 1 — 3 pedidos sobre 2 ofertas del productor, del más reciente al más antiguo")
+    void testListarRecibidosOrdenados() throws Exception {
+        Oferta otraOferta = publicar(productor, ModalidadLogistica.RECOGIDA_FINCA);
+        Pedido antiguo = pedidoHaceHoras(comprador, oferta, 5);
+        Pedido reciente = pedidoHaceHoras(comprador, otraOferta, 1);
+        Pedido intermedio = pedidoHaceHoras(comprador, oferta, 3);
+        entityManager.flush();
+        entityManager.clear();
+
+        mockMvc.perform(get(URL_RECIBIDOS).with(autenticadoComo(productor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(3)))
+                .andExpect(jsonPath("$[*].id", contains(reciente.getId().toString(),
+                        intermedio.getId().toString(), antiguo.getId().toString())))
+                .andExpect(jsonPath("$[0].oferta.id").value(otraOferta.getId().toString()))
+                .andExpect(jsonPath("$[0].estado").value("SOLICITADO"))
+                .andExpect(jsonPath("$[0].direccionEntrega").value("Calle 49 # 50-21"))
+                .andExpect(jsonPath("$[0].municipioEntrega").value("RIONEGRO"))
+                .andExpect(jsonPath("$[0].fechaPreferida").value(hoy.plusDays(2).toString()))
+                .andExpect(jsonPath("$[0].jornada").value("TARDE"))
+                .andExpect(jsonPath("$[0].modalidadEntrega").value("RECOGIDA_FINCA"))
+                .andExpect(jsonPath("$[0].cantidadSolicitada").value(10.00))
+                .andExpect(jsonPath("$[0].precioTotalEstimado").value(35000.00))
+                .andExpect(jsonPath("$[0].comprador.nombre").value("Laura Restrepo"))
+                .andExpect(jsonPath("$[0].comprador.nombreNegocio").value("Restaurante El Fogón"))
+                .andExpect(jsonPath("$[0].comprador.whatsapp").value("+573201112233"))
+                .andExpect(jsonPath("$[0].comprador.telefono").value("+576045551234"));
+    }
+
+    @Test
+    @DisplayName("US-23 Esc 2 — un productor sin pedidos recibe 200 con una lista vacía")
+    void testListarRecibidosVacio() throws Exception {
+        pedidoGuardado(comprador, oferta);
+        Usuario sinPedidos = usuarioRepository.save(nuevoProductor("andres@finca.com", "Finca La Palma"));
+
+        mockMvc.perform(get(URL_RECIBIDOS).with(autenticadoComo(sinPedidos)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(0)));
+    }
+
+    @Test
+    @DisplayName("US-23 Esc 3 — con pedidos cruzados, cada productor solo ve los pedidos de sus ofertas")
+    void testListarRecibidosAislamiento() throws Exception {
+        Usuario productorB = usuarioRepository.save(nuevoProductor("andres@finca.com", "Finca La Palma"));
+        Usuario compradorB = usuarioRepository.save(nuevoComprador("compras@laparrilla.com", "La Parrilla"));
+        Oferta ofertaB = publicar(productorB, ModalidadLogistica.AMBAS);
+        Pedido deAConComprador1 = pedidoHaceHoras(comprador, oferta, 4);
+        Pedido deAConComprador2 = pedidoHaceHoras(compradorB, oferta, 3);
+        Pedido deBConComprador1 = pedidoHaceHoras(comprador, ofertaB, 2);
+        Pedido deBConComprador2 = pedidoHaceHoras(compradorB, ofertaB, 1);
+        entityManager.flush();
+        entityManager.clear();
+
+        mockMvc.perform(get(URL_RECIBIDOS).with(autenticadoComo(productor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].id", contains(deAConComprador2.getId().toString(),
+                        deAConComprador1.getId().toString())))
+                .andExpect(jsonPath("$[*].oferta.fincaNombre", everyItem(is("Finca El Roble"))));
+        mockMvc.perform(get(URL_RECIBIDOS).with(autenticadoComo(productorB)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].id", contains(deBConComprador2.getId().toString(),
+                        deBConComprador1.getId().toString())))
+                .andExpect(jsonPath("$[*].oferta.fincaNombre", everyItem(is("Finca La Palma"))));
+    }
+
+    @Test
+    @DisplayName("US-23 Regla — incluye los pedidos de ofertas agotadas")
+    void testListarRecibidosOfertaAgotada() throws Exception {
+        Pedido pedido = pedidoGuardado(comprador, oferta);
+        oferta.setActiva(false);
+        ofertaRepository.saveAndFlush(oferta);
+
+        mockMvc.perform(get(URL_RECIBIDOS).with(autenticadoComo(productor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].id", contains(pedido.getId().toString())));
+    }
+
+    @Test
+    @DisplayName("US-23 Regla — un comprador recibe 403 y la ruta no se trata como /{id}")
+    void testListarRecibidosComoComprador() throws Exception {
+        // Si /{id} capturara "recibidos", el comprador recibiría 400 por UUID inválido y no 403
+        mockMvc.perform(get(URL_RECIBIDOS).with(autenticadoComo(comprador)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403));
+    }
+
+    @Test
+    @DisplayName("US-23 Regla — /recibidos responde la lista del productor y no el detalle de un pedido")
+    void testListarRecibidosRutaLiteral() throws Exception {
+        pedidoGuardado(comprador, oferta);
+
+        mockMvc.perform(get(URL_RECIBIDOS).with(autenticadoComo(productor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$", hasSize(1)));
+    }
+
+    @Test
+    @DisplayName("US-23 Regla — consultar los pedidos recibidos sin token responde 401")
+    void testListarRecibidosSinToken() throws Exception {
+        mockMvc.perform(get(URL_RECIBIDOS))
                 .andExpect(status().isUnauthorized());
     }
 }

@@ -22,10 +22,11 @@ import lombok.NoArgsConstructor;
 @Schema(description = "Solo se modifican los campos enviados; una cadena vacía borra el número guardado")
 public class ActualizarPerfilProductorRequest {
 
+    // US-17: textos alineados con el BDD de canales de contacto
     public static final String MENSAJE_TELEFONO_REQUERIDO =
-            "El teléfono es obligatorio para habilitar el canal de llamadas";
+            "Debes ingresar un número de teléfono para habilitar este canal.";
     public static final String MENSAJE_WHATSAPP_REQUERIDO =
-            "El WhatsApp es obligatorio para habilitar el canal de WhatsApp";
+            "Debes ingresar un número de WhatsApp para habilitar este canal.";
 
     // A diferencia del registro, se acepta la cadena vacía para poder borrar el número
     private static final String PATRON_TELEFONO = "^(\\+?[0-9]{10,13})?$";

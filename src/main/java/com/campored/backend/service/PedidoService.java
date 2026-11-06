@@ -36,6 +36,7 @@ import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -127,6 +128,22 @@ public class PedidoService {
         return PedidoMapper.toResponse(pedido);
     }
 
+    // ============================================================
+    // FEATURE: US-23 — Pedidos Recibidos del Productor (Sprint 3)
+    // Autor: Cristian Diez
+    // Fecha: 2026-11-05
+    // Descripción: Pedidos sobre las ofertas del productor autenticado para su panel
+    // ============================================================
+    // Incluye pedidos de ofertas agotadas: el pedido sigue vigente aunque la oferta ya no reciba nuevos.
+    // El contador de pendientes lo calcula el frontend porque en el MVP todos están en SOLICITADO
+    @Transactional(readOnly = true)
+    public List<PedidoResponse> listarRecibidos(UUID productorId) {
+        buscarProductor(productorId);
+        return pedidoRepository.findByOfertaProductorIdOrderByFechaCreacionDescIdAsc(productorId).stream()
+                .map(PedidoMapper::toResponse)
+                .toList();
+    }
+
     private void validarFechaPreferida(LocalDate fechaPreferida, Oferta oferta, Map<String, String> errores) {
         LocalDate fechaCosecha = oferta.getFechaEstimadaCosecha();
         if (fechaPreferida.isBefore(LocalDate.now(clock))) {
@@ -160,6 +177,13 @@ public class PedidoService {
     private Usuario buscarComprador(UUID compradorId) {
         return usuarioRepository.findById(compradorId)
                 .filter(usuario -> usuario.getRol() == Rol.COMPRADOR)
+                .orElseThrow(() -> new ResourceNotFoundException(MENSAJE_PERFIL_NO_ENCONTRADO));
+    }
+
+    // Mismo criterio que OfertaService.buscarProductor
+    private void buscarProductor(UUID productorId) {
+        usuarioRepository.findById(productorId)
+                .filter(usuario -> usuario.getRol() == Rol.PRODUCTOR)
                 .orElseThrow(() -> new ResourceNotFoundException(MENSAJE_PERFIL_NO_ENCONTRADO));
     }
 
