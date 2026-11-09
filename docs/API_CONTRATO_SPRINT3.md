@@ -10,7 +10,8 @@ Convenciones generales (iguales al Sprint 2):
 - **401** llega **sin cuerpo** (token ausente, inválido o expirado).
 - Los demás errores usan `ErrorResponse`: `{ timestamp, status, error, mensaje, ruta, errores? }`. `errores` es un mapa `campo → mensaje` y solo aparece cuando hay errores por campo.
 - Fechas `LocalDate` como `"2026-11-20"`. Fechas con hora con el offset de Colombia (ver [Formato de fechas](#formato-de-fechas)). Montos y cantidades como número decimal (`420000.00`).
-- Un token válido de un usuario que ya no existe responde **404** `Perfil de usuario no encontrado` en `POST /api/pedidos`, `POST /api/contactos` y `GET /api/pedidos/recibidos`.
+- Un token válido de un usuario que ya no existe responde **404** `Perfil de usuario no encontrado` en `POST /api/pedidos`, `POST /api/contactos`, `GET /api/pedidos/recibidos` y `PATCH /api/usuarios/perfil/productor`.
+- En pedidos, `modalidadEntrega` solo admite `RECOGIDA_FINCA` y `DESPACHO_PRODUCTOR`; Swagger lo documenta así aunque el enum `ModalidadLogistica` incluya `AMBAS`.
 
 ### Formato de fechas
 
@@ -556,5 +557,6 @@ El cambio no se guarda. Si fallan los dos canales, llegan `errores.telefono` y `
 | Ambos canales apagados | 200 | — | (aviso del frontend) |
 | Sin token | 401 | — | (sin cuerpo) |
 | Usuario comprador | 403 | `mensaje` | El rol del usuario no permite esta operación |
+| Perfil del token inexistente | 404 | `mensaje` | Perfil de usuario no encontrado |
 
 En todos los 400 con `errores`, `mensaje` es `La solicitud contiene campos inválidos`.

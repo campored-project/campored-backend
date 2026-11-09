@@ -70,7 +70,10 @@ public class CrearPedidoRequest {
     @NotNull(message = MENSAJE_JORNADA_REQUERIDA)
     private Jornada jornada;
 
-    @Schema(example = "DESPACHO_PRODUCTOR", nullable = true, description = "RECOGIDA_FINCA o DESPACHO_PRODUCTOR. "
+    // implementation = String.class: sobre el enum, springdoc sumaría allowableValues a sus constantes y AMBAS seguiría
+    @Schema(example = "DESPACHO_PRODUCTOR", nullable = true, implementation = String.class,
+            allowableValues = {"RECOGIDA_FINCA", "DESPACHO_PRODUCTOR"},
+            description = "RECOGIDA_FINCA o DESPACHO_PRODUCTOR. "
             + "Obligatoria si la oferta es AMBAS; si no, se puede omitir y se usa la modalidad de la oferta")
     private ModalidadLogistica modalidadEntrega;
 

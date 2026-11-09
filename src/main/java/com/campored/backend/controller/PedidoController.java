@@ -53,7 +53,7 @@ public class PedidoController {
     @ApiResponse(responseCode = "401", description = "Token ausente, inválido o expirado", content = @Content)
     @ApiResponse(responseCode = "403", description = "El usuario autenticado no es comprador",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
-    @ApiResponse(responseCode = "404", description = "La oferta no existe",
+    @ApiResponse(responseCode = "404", description = "La oferta no existe o el perfil del usuario autenticado no existe",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @ApiResponse(responseCode = "422", description = "La oferta está agotada",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
