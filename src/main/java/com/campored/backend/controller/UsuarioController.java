@@ -45,6 +45,8 @@ public class UsuarioController {
     @ApiResponse(responseCode = "401", description = "Token ausente, inválido o expirado", content = @Content)
     @ApiResponse(responseCode = "403", description = "El usuario autenticado no es productor",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    @ApiResponse(responseCode = "404", description = "El perfil del usuario autenticado no existe",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     public UsuarioResponse actualizarPerfilProductor(@AuthenticationPrincipal UUID usuarioId,
                                                      @Valid @RequestBody ActualizarPerfilProductorRequest request) {
         return usuarioService.actualizarPerfilProductor(usuarioId, request);

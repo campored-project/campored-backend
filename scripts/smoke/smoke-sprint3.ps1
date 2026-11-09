@@ -11,6 +11,9 @@
     Al terminar marca como AGOTADA las ofertas smoke que sigan activas para que no queden en el catálogo
     público. La limpieza definitiva se hace con scripts/smoke/limpiar_datos_smoke.sql.
 
+    Ante un 502, 503 o 504 cada petición se reintenta una vez tras 5 s; el chequeo evalúa la respuesta del
+    reintento y lo marca con "reintento tras <código>" en la consola y en la tabla Markdown.
+
 .PARAMETER BaseUrl
     URL base de la API. Por defecto https://campored-backend.onrender.com
 
@@ -100,6 +103,13 @@ $Http.Timeout = [TimeSpan]::FromSeconds(90)
 
 $Respuestas4xx5xx = New-Object System.Collections.Generic.List[object]
 $Resultados = New-Object System.Collections.Generic.List[object]
+$CODIGOS_REINTENTO = @(502, 503, 504)
+
+# Texto que se agrega al resultado de un chequeo cuya respuesta llegó en el reintento
+function Get-AvisoReintento($Codigo) {
+    if ($Codigo) { return " ($ICONO_AVISO reintento tras $Codigo)" }
+    return ''
+}
 
 function Invoke-Api {
     param(
@@ -111,31 +121,52 @@ function Invoke-Api {
         [System.Net.Http.HttpClient]$Cliente = $Http,
         [switch]$SinRegistrar
     )
-    $peticion = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::new($Metodo), "$BaseUrl$Ruta")
-    if ($Token) {
-        $peticion.Headers.Authorization = New-Object System.Net.Http.Headers.AuthenticationHeaderValue('Bearer', $Token)
-    }
-    foreach ($clave in $Encabezados.Keys) { [void]$peticion.Headers.TryAddWithoutValidation($clave, [string]$Encabezados[$clave]) }
+    $json = $null
     if ($null -ne $Cuerpo) {
         $json = if ($Cuerpo -is [string]) { $Cuerpo } else { $Cuerpo | ConvertTo-Json -Depth 6 -Compress }
-        $peticion.Content = New-Object System.Net.Http.StringContent($json, [Text.Encoding]::UTF8, 'application/json')
     }
 
-    $inicioUtc = [DateTime]::UtcNow
-    $status = 0
-    $texto = ''
-    $encabezadosResp = @{}
-    try {
-        $resp = $Cliente.SendAsync($peticion).GetAwaiter().GetResult()
-        $status = [int]$resp.StatusCode
-        $bytes = $resp.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
-        $texto = [Text.Encoding]::UTF8.GetString($bytes)
-        foreach ($h in $resp.Headers) { $encabezadosResp[$h.Key] = ($h.Value -join ', ') }
-        foreach ($h in $resp.Content.Headers) { $encabezadosResp[$h.Key] = ($h.Value -join ', ') }
-    } catch {
-        $texto = "Error de red: $($_.Exception.Message)"
+    # Un 502, 503 o 504 suele ser el proxy de Render durante un reinicio: se reintenta una sola vez tras 5 s.
+    # La respuesta que se devuelve y se evalúa es la del reintento; Reintento guarda el código que lo provocó
+    $reintento = $null
+    for ($intento = 1; $intento -le 2; $intento++) {
+        # Un HttpRequestMessage no se puede enviar dos veces: se arma uno nuevo en cada intento
+        $peticion = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::new($Metodo), "$BaseUrl$Ruta")
+        if ($Token) {
+            $peticion.Headers.Authorization = New-Object System.Net.Http.Headers.AuthenticationHeaderValue('Bearer', $Token)
+        }
+        foreach ($clave in $Encabezados.Keys) { [void]$peticion.Headers.TryAddWithoutValidation($clave, [string]$Encabezados[$clave]) }
+        if ($null -ne $json) {
+            $peticion.Content = New-Object System.Net.Http.StringContent($json, [Text.Encoding]::UTF8, 'application/json')
+        }
+
+        $inicioUtc = [DateTime]::UtcNow
+        $status = 0
+        $texto = ''
+        $encabezadosResp = @{}
+        try {
+            $resp = $Cliente.SendAsync($peticion).GetAwaiter().GetResult()
+            $status = [int]$resp.StatusCode
+            $bytes = $resp.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
+            $texto = [Text.Encoding]::UTF8.GetString($bytes)
+            foreach ($h in $resp.Headers) { $encabezadosResp[$h.Key] = ($h.Value -join ', ') }
+            foreach ($h in $resp.Content.Headers) { $encabezadosResp[$h.Key] = ($h.Value -join ', ') }
+        } catch {
+            $texto = "Error de red: $($_.Exception.Message)"
+        }
+        $finUtc = [DateTime]::UtcNow
+
+        if ($intento -eq 1 -and $CODIGOS_REINTENTO -contains $status) {
+            $reintento = $status
+            Write-Host ("$ICONO_AVISO reintento tras {0}: {1} {2} (se espera 5 s)" -f $status, $Metodo, $Ruta)
+            Start-Sleep -Seconds 5
+            continue
+        }
+        break
     }
-    $finUtc = [DateTime]::UtcNow
+    if ($reintento) {
+        Write-Host ("$ICONO_AVISO resultado del reintento de {0} {1}: HTTP {2}" -f $Metodo, $Ruta, $status)
+    }
 
     $datos = $null
     if ($status -gt 0 -and $texto.Trim().Length -gt 0) {
@@ -150,6 +181,7 @@ function Invoke-Api {
         Headers   = $encabezadosResp
         InicioUtc = $inicioUtc
         FinUtc    = $finUtc
+        Reintento = $reintento
     }
     if (-not $SinRegistrar -and $status -ge 400) { $Respuestas4xx5xx.Add($r) }
     return $r
@@ -191,7 +223,7 @@ function Write-Resumen {
         foreach ($x in $Resultados) {
             $icono = if ($x.Ok) { $ICONO_OK } else { $ICONO_KO }
             $esc = ($x.Escenario -replace '\|', '\|')
-            $lineas.Add("| $($x.Hu) | $esc | $($x.Esperado) | $($x.Obtenido) | $icono |")
+            $lineas.Add("| $($x.Hu) | $esc | $($x.Esperado) | $($x.Obtenido)$(Get-AvisoReintento $x.Reintento) | $icono |")
         }
         [IO.File]::WriteAllLines($TablaMd, $lineas, (New-Object Text.UTF8Encoding($false)))
     }
@@ -224,7 +256,8 @@ function Test-Check {
     }
     $ok = ($fallos.Count -eq 0)
     $icono = if ($ok) { $ICONO_OK } else { $ICONO_KO }
-    Write-Host ("{0} [{1}] {2} | esperado {3} · obtenido {4}" -f $icono, $Hu, $Escenario, $Esperado, $obtenido)
+    $reintento = if ($Resp) { $Resp.Reintento } else { $null }
+    Write-Host ("{0} [{1}] {2} | esperado {3} · obtenido {4}{5}" -f $icono, $Hu, $Escenario, $Esperado, $obtenido, (Get-AvisoReintento $reintento))
     if ($Resp -and $Resp.Status -ge 400 -and $Resp.Datos) {
         if ($Resp.Datos.mensaje) { Write-Host "      mensaje: $($Resp.Datos.mensaje)" }
         if ($Resp.Datos.errores) { Write-Host "      errores: $($Resp.Datos.errores | ConvertTo-Json -Compress)" }
@@ -233,7 +266,7 @@ function Test-Check {
         foreach ($f in $fallos) { Write-Host "      -> $f" }
         if ($Resp -and $Resp.Status -eq 0) { Write-Host "      -> $($Resp.Texto)" }
     }
-    $Resultados.Add([pscustomobject]@{ Hu = $Hu; Escenario = $Escenario; Esperado = $Esperado; Obtenido = $obtenido; Ok = $ok; Grupo = $Grupo })
+    $Resultados.Add([pscustomobject]@{ Hu = $Hu; Escenario = $Escenario; Esperado = $Esperado; Obtenido = $obtenido; Ok = $ok; Grupo = $Grupo; Reintento = $reintento })
     if ($Bloqueante -and -not $ok) { Stop-Smoke "[$Hu] $Escenario" }
     return $ok
 }

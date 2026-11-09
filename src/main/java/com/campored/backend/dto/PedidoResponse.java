@@ -35,7 +35,9 @@ public record PedidoResponse(
         @Schema(example = "RIONEGRO") Municipio municipioEntrega,
         LocalDate fechaPreferida,
         @Schema(example = "MANANA") Jornada jornada,
-        @Schema(description = "RECOGIDA_FINCA o DESPACHO_PRODUCTOR; nunca AMBAS", example = "DESPACHO_PRODUCTOR")
+        // implementation = String.class por la misma razón que en CrearPedidoRequest
+        @Schema(description = "RECOGIDA_FINCA o DESPACHO_PRODUCTOR; nunca AMBAS", example = "DESPACHO_PRODUCTOR",
+                implementation = String.class, allowableValues = {"RECOGIDA_FINCA", "DESPACHO_PRODUCTOR"})
         ModalidadLogistica modalidadEntrega,
         @Schema(nullable = true) String notasAcceso,
         OfertaPedido oferta,

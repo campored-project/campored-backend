@@ -17,6 +17,9 @@
 - [API — Endpoints implementados](#api--endpoints-implementados)
 - [Seguridad](#seguridad)
 - [Testing](#testing)
+  - [Smoke test contra producción](#smoke-test-contra-producción)
+  - [Scripts SQL](#scripts-sql)
+  - [Datos de prueba](#datos-de-prueba)
 - [Flujo de trabajo Git](#flujo-de-trabajo-git)
 - [Integración con Azure DevOps](#integración-con-azure-devops)
 - [Despliegue](#despliegue)
@@ -28,11 +31,14 @@
 
 CampoRed conecta pequeños productores agrícolas de **Sonsón** y **San Carlos** (Antioquia) con compradores comerciales (restaurantes, tiendas y mayoristas) del Oriente Antioqueño y el Área Metropolitana de Medellín, eliminando intermediarios en la cadena de distribución local.
 
-Este repositorio contiene el backend del MVP: una API REST modular construida con Spring Boot 3 sobre PostgreSQL, con autenticación JWT, control de acceso por roles (PRODUCTOR / COMPRADOR) y cobertura de tests del **96.5 %** de líneas.
+Este repositorio contiene el backend del MVP: una API REST modular construida con Spring Boot 3 sobre PostgreSQL, con autenticación JWT, control de acceso por roles (PRODUCTOR / COMPRADOR) y cobertura de tests del **99 %** de líneas.
 
-**Producción:**
-- **API:** `https://campored-backend-production.up.railway.app/api`
-- **Swagger UI:** `https://campored-backend-production.up.railway.app/swagger-ui.html`
+**Producción (Render):**
+- **API:** `https://campored-backend.onrender.com/api`
+- **Swagger UI:** `https://campored-backend.onrender.com/swagger-ui.html`
+- **OpenAPI JSON:** `https://campored-backend.onrender.com/v3/api-docs`
+
+> Render (plan Free) apaga el servicio tras unos minutos sin tráfico: la primera petición puede tardar hasta un minuto mientras arranca.
 
 ---
 
@@ -59,6 +65,8 @@ Este repositorio contiene el backend del MVP: una API REST modular construida co
 - **Maven 3.9+** — o usar el wrapper `mvnw` incluido en el repo
 - **PostgreSQL 15+** — local, o usar la instancia de Supabase del equipo
 - **Git**
+- **Node.js 18+** — solo para el seed de datos demo (`scripts/demo/seed-demo.mjs`)
+- **Windows PowerShell 5.1** — solo para el smoke test (`scripts/smoke/smoke-sprint3.ps1`)
 
 Verificar versiones:
 
@@ -99,29 +107,33 @@ spring.datasource.password=TU_PASSWORD_LOCAL
 jwt.secret=CLAVE_SECRETA_LOCAL_MINIMO_256_BITS_PARA_DESARROLLO
 jwt.expiration=86400000
 
-# JPA — crea/actualiza tablas automáticamente en local
-spring.jpa.hibernate.ddl-auto=update
+# JPA — valida el esquema contra las entidades, nunca lo modifica
+spring.jpa.hibernate.ddl-auto=validate
 spring.jpa.show-sql=true
 spring.profiles.active=local
 ```
 
 > **Nota:** Si usas la instancia de Supabase del equipo, solicita las credenciales. La conexión directa es solo IPv6; usa siempre el **Session Pooler** (`aws-0-us-east-2.pooler.supabase.com:5432`).
 
+> **No uses `ddl-auto=update` (ni `create`) contra Supabase.** Hibernate alteraría la base de producción sin los `CHECK`, índices ni RLS de los scripts y la dejaría distinta de lo que valida Render. Todo cambio de esquema es un script de `sql/` que se ejecuta a mano en el SQL Editor de Supabase **antes** del merge (ver [Scripts SQL](#scripts-sql)). Con una base local vacía, crea las tablas ejecutando esos scripts en orden.
+
 ---
 
 ## Variables de entorno
 
+Son las que lee `src/main/resources/application.properties`:
+
 | Variable | Descripción | Ejemplo |
 |---|---|---|
-| `SPRING_DATASOURCE_URL` | URL JDBC de la base de datos | `jdbc:postgresql://host:5432/campored_db` |
-| `SPRING_DATASOURCE_USERNAME` | Usuario de la BD | `postgres.xxxxxxxx` |
-| `SPRING_DATASOURCE_PASSWORD` | Contraseña de la BD | `***` |
+| `DB_URL` | URL JDBC de la base de datos | `jdbc:postgresql://aws-0-us-east-2.pooler.supabase.com:5432/postgres?sslmode=require` |
+| `DB_USERNAME` | Usuario de la BD | `postgres.xxxxxxxx` |
+| `DB_PASSWORD` | Contraseña de la BD | `***` |
 | `JWT_SECRET` | Clave para firmar tokens (mínimo 256 bits) | `your-super-secret-key...` |
 | `JWT_EXPIRATION` | Duración del token en ms (por defecto 24 h) | `86400000` |
 | `CORS_ALLOWED_ORIGINS` | Orígenes permitidos para CORS, separados por coma (por defecto `http://localhost:5173`, `https://campored-frontend.vercel.app` y `https://campored.rollerandres.dev`) | `http://localhost:5173,https://campored-frontend.vercel.app` |
-| `SPRING_PROFILES_ACTIVE` | Perfil activo | `local` / `prod` |
+| `PORT` | Puerto HTTP (por defecto 8080; Render lo asigna solo) | `8080` |
 
-En producción (Railway) estas variables se configuran como variables de entorno del servicio. **Nunca se suben al repositorio.**
+En producción (Render) estas variables se configuran en **Environment** del servicio `campored-backend`. **Nunca se suben al repositorio.**
 
 ### CORS
 
@@ -171,25 +183,31 @@ El backend sigue un patrón en capas estricto: **Controller → Service → Repo
 src/
 ├── main/
 │   ├── java/com/campored/backend/
-│   │   ├── config/             # SecurityConfig, JwtAuthFilter, CorsConfig
-│   │   ├── controller/         # REST Controllers (AuthController, UsuarioController)
-│   │   ├── dto/                # Request/Response objects
+│   │   ├── config/             # SecurityConfig, JwtAuthFilter, CorsConfig, OpenApiConfig, TimeConfig
+│   │   ├── controller/         # Auth, Usuario, Oferta, Pedido y Contacto
+│   │   ├── dto/                # Request/Response objects, ErrorResponse, PageResponse
 │   │   │   └── validation/     # Anotaciones y validadores personalizados
-│   │   ├── entity/             # Entidades JPA (Usuario, Finca, Negocio)
+│   │   ├── entity/             # Usuario, Finca, Negocio, Oferta, Pedido, RegistroContacto y enums
 │   │   ├── exception/          # GlobalExceptionHandler, excepciones personalizadas
-│   │   ├── repository/         # Interfaces JpaRepository
-│   │   ├── service/            # Lógica de negocio (UsuarioService, JwtService)
-│   │   └── util/               # Mappers (UsuarioMapper)
+│   │   ├── repository/         # Interfaces JpaRepository y OfertaSpecifications
+│   │   ├── service/            # Auth, Jwt, Usuario, Oferta, Pedido y Contacto
+│   │   └── util/               # Mappers, ProductoNormalizer, FechaRespuesta
 │   └── resources/
 │       ├── application.properties          # Config base (compartida)
 │       ├── application-local.properties    # Config local (gitignored)
-│       └── db/migration/                   # Scripts SQL manuales para Supabase
+│       └── db/migration/                   # Script SQL manual del Sprint 1 (US-04)
 │
 └── test/
     └── java/com/campored/backend/
         ├── config/             # SecurityIntegrationTest, CorsIntegrationTest
-        ├── controller/         # UsuarioControllerIntegrationTest
-        └── service/            # UsuarioServiceTest, JwtServiceTest
+        ├── controller/         # Integración por controlador, con JWT reales y H2
+        ├── service/            # Unitarios de servicio con Mockito
+        └── ...                 # dto/validation, entity, repository, util
+
+sql/sprint2/, sql/sprint3/      # Scripts SQL manuales de Supabase (ver Scripts SQL)
+scripts/smoke/                  # Smoke test contra producción y su limpieza
+scripts/demo/                   # Datos demo para la presentación
+docs/                           # Contrato API del Sprint 3, smoke test y checklist de release
 ```
 
 ---
@@ -229,6 +247,8 @@ Negocio  (solo si rol = COMPRADOR)
 ```
 
 **Regla:** un usuario tiene `Finca` **o** `Negocio`, nunca ambos.
+
+Los Sprints 2 y 3 agregan `ofertas` (US-06), `pedidos` (US-18) y `registros_contacto` (US-19). Sus columnas, `CHECK` e índices están en los scripts de [Scripts SQL](#scripts-sql).
 
 ---
 
@@ -327,7 +347,7 @@ Solo se actualizan los campos enviados. Un campo ausente conserva su valor; `""`
 }
 ```
 
-> **Regla de canales:** si `canalWhatsappHabilitado` o `canalLlamadaHabilitado` es `true`, el campo `telefono` debe estar presente en el perfil.
+> **Regla de canales (US-17):** `canalWhatsappHabilitado: true` exige un `whatsapp` guardado y `canalLlamadaHabilitado: true` exige un `telefono` guardado; si no, responde 400 en `errores.whatsapp` o `errores.telefono`.
 
 #### PATCH `/api/usuarios/perfil/comprador`
 
@@ -345,12 +365,47 @@ Solo se actualizan los campos enviados. Un campo ausente conserva su valor; `""`
 
 ---
 
+### Resumen de endpoints — Sprints 2 y 3
+
+El detalle de cada endpoint (cuerpos, ejemplos y mensajes exactos) está en [`docs/API_CONTRATO_SPRINT3.md`](docs/API_CONTRATO_SPRINT3.md) y en Swagger. Si no coinciden, manda Swagger.
+
+**Sprint 2 — Ofertas y catálogo**
+
+| Método | Ruta | Rol | HU |
+|---|---|---|---|
+| `POST` | `/api/ofertas` | PRODUCTOR | US-06 Crear oferta |
+| `GET` | `/api/ofertas/mis-ofertas` | PRODUCTOR | US-07 Mis ofertas (activas y agotadas) |
+| `PUT` | `/api/ofertas/{id}` | PRODUCTOR dueño | US-08 Editar oferta |
+| `PATCH` | `/api/ofertas/{id}/estado` | PRODUCTOR dueño | US-09 Marcar como agotada |
+| `GET` | `/api/ofertas` | Público | US-11 / US-13 Catálogo paginado con filtros |
+| `GET` | `/api/ofertas/{id}` | Público (los números solo para COMPRADOR) | US-12 Detalle de oferta |
+
+**Sprint 3 — Pedidos, contactos y panel del productor**
+
+| Método | Ruta | Rol | HU |
+|---|---|---|---|
+| `POST` | `/api/pedidos` | COMPRADOR | US-18 Checkout y pedido |
+| `GET` | `/api/pedidos/{id}` | COMPRADOR dueño o PRODUCTOR de la oferta | US-18 Detalle del pedido |
+| `GET` | `/api/pedidos/recibidos` | PRODUCTOR | US-23 Pedidos recibidos |
+| `DELETE` | `/api/ofertas/{id}` | PRODUCTOR dueño | US-10 Eliminar oferta (bloqueado si tiene pedidos o contactos) |
+| `POST` | `/api/contactos` | COMPRADOR | US-19 Registro del contacto (backend de US-14 WhatsApp y US-15 llamada) |
+| `GET` | `/api/contactos/mios` | COMPRADOR | US-19 Historial de contactos |
+| `PATCH` | `/api/usuarios/perfil/productor` | PRODUCTOR | US-17 Canales de contacto (endpoint de US-04) |
+
+Todos los errores siguen el formato único de US-22. US-24 (imágenes) es solo del frontend.
+
 ### Valores válidos (enums)
 
 | Campo | Valores aceptados |
 |---|---|
-| `municipio` | `SONSON`, `SAN_CARLOS` |
+| `municipio` | 24 municipios del Oriente Antioqueño y Medellín (`SONSON`, `SAN_CARLOS`, `RIONEGRO`, `MEDELLIN`…). Se aceptan el código o el nombre, sin distinguir mayúsculas ni tildes |
 | `tipoNegocio` | `RESTAURANTE`, `TIENDA`, `MINIMERCADO`, `MAYORISTA` |
+| `modalidadLogistica` (oferta) | `RECOGIDA_FINCA`, `DESPACHO_PRODUCTOR`, `AMBAS` |
+| `modalidadEntrega` (pedido) | `RECOGIDA_FINCA`, `DESPACHO_PRODUCTOR` (nunca `AMBAS`) |
+| `jornada` | `MANANA`, `TARDE` |
+| `canal` | `WHATSAPP`, `LLAMADA` |
+
+La lista completa de cada enum está en Swagger (`/v3/api-docs`).
 
 ### Códigos de respuesta
 
@@ -358,19 +413,25 @@ Solo se actualizan los campos enviados. Un campo ausente conserva su valor; `""`
 |---|---|
 | `200` | OK |
 | `201` | Recurso creado |
+| `204` | Recurso eliminado, sin cuerpo |
 | `400` | Validación fallida — campo `errores` con detalle por campo |
-| `401` | Token ausente, inválido, expirado o con firma incorrecta |
-| `403` | Token válido pero rol insuficiente |
+| `401` | Token ausente, inválido, expirado o con firma incorrecta (sin cuerpo) |
+| `403` | Rol insuficiente o recurso de otro usuario |
 | `404` | Recurso no encontrado |
 | `409` | Correo ya registrado |
+| `422` | Regla de negocio: oferta agotada, canal no habilitado, oferta con pedidos o contactos |
 | `500` | Error interno del servidor |
 
-Formato del `400`:
+Formato de error (`ErrorResponse`, US-22). `errores` solo aparece cuando hay errores por campo:
 ```json
 {
+  "timestamp": "2026-11-05T20:28:30.108422793-05:00",
+  "status": 400,
+  "error": "Bad Request",
+  "mensaje": "La solicitud contiene campos inválidos",
+  "ruta": "/api/pedidos",
   "errores": {
-    "correo": "El correo ya está registrado",
-    "contrasena": "Mínimo 8 caracteres"
+    "direccionEntrega": "La dirección de entrega es obligatoria para continuar."
   }
 }
 ```
@@ -408,7 +469,10 @@ Request
 - `POST /api/auth/registro/productor`
 - `POST /api/auth/registro/comprador`
 - `POST /api/auth/login`
+- `GET /api/ofertas` y `GET /api/ofertas/{id}` (catálogo y detalle)
 - `GET /swagger-ui/**` y `GET /v3/api-docs/**`
+
+Todo lo demás exige token; el rol se controla con `@PreAuthorize`.
 
 ---
 
@@ -417,42 +481,85 @@ Request
 ### Ejecutar tests
 
 ```bash
-# Todos los tests
-.\mvnw.cmd clean test
+# Build completo: compila, corre todos los tests y verifica la cobertura con JaCoCo
+./mvnw clean verify            # Linux/Mac
+.\mvnw.cmd clean verify        # Windows
+# Reporte en: target/site/jacoco/index.html
 
 # Un test específico
-.\mvnw.cmd test -Dtest=UsuarioServiceTest
-
-# Con reporte de cobertura JaCoCo
-.\mvnw.cmd clean verify
-# Reporte en: target/site/jacoco/index.html
+./mvnw test -Dtest=PedidoServiceTest
 ```
 
-### Estado actual — Sprint 1
+Los tests no necesitan base de datos ni variables de entorno: usan H2 en memoria en modo PostgreSQL (`src/test/resources/application-test.properties`). Corren con `-Duser.timezone=UTC`, igual que Render: el `pom.xml` lo pasa a Surefire, así que `./mvnw clean verify` ya lo aplica. Si corres un test desde el IDE, agrega `-Duser.timezone=UTC` en las opciones de la JVM para reproducir las fechas de producción.
+
+### Estado actual — Sprint 3
 
 | Métrica | Valor |
 |---|---|
-| Total de tests | **82** |
-| Resultado | 82 / 0 — BUILD SUCCESS |
-| Cobertura de líneas | **96.5 %** |
-| Cobertura service | 100 % |
-| Cobertura controller | 100 % |
-| Cobertura config / util | 100 % |
+| Total de tests | **367** |
+| Resultado | 367 / 0 fallos — BUILD SUCCESS |
+| Cobertura de líneas | **99,01 %** |
+| Cobertura de ramas | **95,22 %** |
 
 ### Cobertura mínima exigida
 
-| Capa | Mínimo |
-|---|---|
-| Service | 80 % |
-| Controller | 70 % |
+El build falla si JaCoCo baja del 80 % (`pom.xml`). El criterio del equipo es no bajar del 95 % de líneas.
 
 ### Suites de tests
 
-- `UsuarioServiceTest` — registro productor/comprador, actualización de perfil, validación de canales, correo duplicado, municipio inválido
-- `JwtServiceTest` — generación del token, claims (`sub`, `uid`, `rol`), expiración 24 h, BCrypt costo >= 10
-- `UsuarioControllerIntegrationTest` — flujo HTTP completo de perfiles PATCH, control por rol
-- `SecurityIntegrationTest` — 401 sin token, token mal formado, esquema Basic, firma incorrecta, token expirado; 403 por rol incorrecto
-- `CorsIntegrationTest` — preflight desde el frontend, origen no permitido rechazado (403), cabeceras CORS en respuestas 401
+- Unitarios de servicio con Mockito (`*ServiceTest`): un test por regla y por escenario BDD.
+- Integración por controlador (`*ControllerIntegrationTest`) con `@SpringBootTest`, MockMvc, H2 y **JWT reales** generados con `JwtService`: rol incorrecto (403), sin token (401), recurso ajeno (403) e inexistente (404).
+- `SecurityIntegrationTest` y `CorsIntegrationTest`: cadena de seguridad, tokens inválidos y preflight desde el frontend.
+- `FechasRespuestaIntegrationTest`: las fechas con hora salen con el offset de Colombia (`-05:00`).
+
+### Smoke test contra producción
+
+`scripts/smoke/smoke-sprint3.ps1` (Windows PowerShell 5.1) recorre los flujos del Sprint 3 contra el backend desplegado con usuarios temporales `smoke.<rol>.<sufijo>@campored.test`. Ante un 502, 503 o 504 reintenta una vez tras 5 s y lo marca con «reintento tras <código>».
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\smoke\smoke-sprint3.ps1
+# Opcionales: -BaseUrl http://localhost:8080 · -TablaMd <ruta del .md de resultados> · -ConservarOfertasActivas
+```
+
+Código de salida: 0 si todo pasa, 1 si falla algún chequeo, 2 si se detuvo en un paso bloqueante. Después de cada corrida, en el SQL Editor de Supabase:
+
+1. `scripts/smoke/verificar_esquema_sprint3.sql` (solo lectura: `CHECK`, FK, índices, RLS y filas smoke).
+2. `scripts/smoke/limpiar_datos_smoke.sql` (borra solo lo de `smoke.%@campored.test`).
+
+El resultado vigente está en [`docs/SMOKE_TEST_SPRINT3.md`](docs/SMOKE_TEST_SPRINT3.md).
+
+### Scripts SQL
+
+Producción corre con `ddl-auto=validate`: si el esquema no coincide con las entidades, el backend no arranca en Render. Por eso cada cambio de esquema es un script manual que se ejecuta en el SQL Editor de Supabase **antes** de mergear el código que lo usa.
+
+| Script | Qué hace | Sprint |
+|---|---|---|
+| `src/main/resources/db/migration/US-04_canales_contacto_usuarios.sql` | Columnas de canales de contacto en `usuarios` | 1 |
+| `sql/sprint2/US-06_crear_tabla_ofertas.sql` | Tabla `ofertas` con sus `CHECK` | 2 |
+| `sql/sprint2/US-11-13_indices_catalogo_ofertas.sql` | Índices del catálogo | 2 |
+| `sql/sprint3/US-18_crear_tabla_pedidos.sql` | Tabla `pedidos` | 3 |
+| `sql/sprint3/US-19_crear_tabla_registros_contacto.sql` | Tabla `registros_contacto` | 3 |
+
+Todos están aplicados en Supabase. Los de `scripts/` no cambian el esquema: verifican o limpian datos de prueba.
+
+### Datos de prueba
+
+En producción conviven dos tipos de datos de prueba, cada uno con su dominio de correo. **Ninguna de las dos limpiezas toca el otro tipo** (ni los usuarios reales).
+
+| Tipo | Correos | Vida | Flujo |
+|---|---|---|---|
+| Smoke | `smoke.*@campored.test` | Temporales: los crea cada corrida del smoke test | `smoke-sprint3.ps1` → `verificar_esquema_sprint3.sql` → `limpiar_datos_smoke.sql` después de cada corrida |
+| Demo | `*@campored.demo` | Permanentes, para la presentación | `limpiar_datos_demo.sql` → `seed-demo.mjs` → `verificar_datos_demo.sql` |
+
+Los datos demo (`scripts/demo/`) son 8 productores de Sonsón y San Carlos, 6 compradores, 29 ofertas (3 agotadas), 9 pedidos y 12 contactos, definidos en `scripts/demo/datos-demo.json`. Se cargan solo por la API, para que pasen por BCrypt y por las validaciones:
+
+```bash
+# La contraseña de todos los usuarios demo sale de DEMO_PASSWORD; el script nunca la imprime
+DEMO_PASSWORD='...' node scripts/demo/seed-demo.mjs          # bash
+$env:DEMO_PASSWORD='...'; node scripts/demo/seed-demo.mjs    # PowerShell
+```
+
+El seed es idempotente (una segunda corrida no crea nada) y se niega a correr si encuentra datos demo de otra carga: en ese caso, primero `limpiar_datos_demo.sql`. `BASE_URL` cambia el backend (por defecto Render). Escribe los ids de la corrida y la lista de cuentas fuera del repo (`../seed-demo/resultado-demo.json` y la sección «Usuarios demo» de `../usuarios-prueba-render.md`). Al final, `verificar_datos_demo.sql` debe mostrar `ok = true` en todas las filas.
 
 ---
 
@@ -462,25 +569,24 @@ Request
 
 | Rama | Propósito |
 |---|---|
-| `main` | Producción — solo recibe merge desde `develop` al cierre de sprint |
+| `main` | Producción — recibe el merge desde `develop` en cada release |
 | `develop` | Integración — todas las features se mergean aquí |
-| `US-XX-descripcion` | Rama de feature por historia de usuario |
+| `feat/US-XX-descripcion` | Rama de feature por historia de usuario o bloque |
 
 ### Ciclo por historia de usuario
 
 ```bash
 git checkout develop
-git pull origin develop
-git checkout -b US-06-publicar-oferta
+git pull --ff-only
+git checkout -b feat/US-18-10-pedido-eliminar
 
-# Desarrollar + tests
+# Desarrollar + tests (./mvnw clean verify en verde)
 
 git add src/...
-git commit -m "feat(US-06): ... Fixes: #US-06"
-git push origin US-06-publicar-oferta
+git commit -m "feat(US-18): crear entidad Pedido y endpoint POST /api/pedidos AB#49"
+git push -u origin feat/US-18-10-pedido-eliminar
 
-# Abrir PR a develop en GitHub
-# Code review → merge
+# Abrir PR a develop en GitHub → revisión → merge commit (no squash)
 # Cerrar HU en Azure (status → Done)
 ```
 
@@ -495,14 +601,10 @@ Tablero: [dev.azure.com/campoRed/CampoRed_ProyectoIntegrador2](https://dev.azure
 ### Formato de commit obligatorio
 
 ```
-feat(US-XX): Descripción concisa en imperativo
-
-- Detalle técnico 1
-- Detalle técnico 2
-- Tests: N en verde, cobertura X%
-
-Fixes: #US-XX
+feat(US-XX): descripción concisa en imperativo y minúsculas AB#<id>
 ```
+
+El `AB#<id>` enlaza el commit con la HU de Azure Boards (por ejemplo, US-18 es `AB#49`).
 
 ### Prefijos de commit
 
@@ -523,8 +625,9 @@ Fixes: #US-XX
 
 | Entorno | Plataforma | URL |
 |---|---|---|
-| Producción API | Railway | `https://campored-backend-production.up.railway.app` |
-| Producción frontend | Vercel | `https://campored-frontend.vercel.app` |
+| Producción API | Render (plan Free, Docker) | `https://campored-backend.onrender.com` |
+| Swagger UI | Render | `https://campored-backend.onrender.com/swagger-ui.html` |
+| Producción frontend | Vercel | `https://campored-frontend.vercel.app` · `https://campored.rollerandres.dev` |
 | Base de datos | Supabase (us-east-2) | Session Pooler |
 
 ### Conexión a Supabase
@@ -540,19 +643,18 @@ Database: postgres
 
 ### Deploy automático
 
-Railway despliega automáticamente al detectar un push a la rama `develop`. Tiempo estimado: ~2 minutos.
+Render construye la imagen con el `Dockerfile` y despliega solo al detectar un push en la rama configurada: `develop` hasta el release v1.0.0 y `main` después (ver [`docs/RELEASE_v1.0.0.md`](docs/RELEASE_v1.0.0.md)). Las variables de entorno se configuran en **Environment** del servicio (ver [Variables de entorno](#variables-de-entorno)).
 
-El perfil de producción usa `spring.jpa.hibernate.ddl-auto=validate` — Hibernate **no** crea ni modifica tablas. Toda migración de esquema debe aplicarse manualmente en Supabase antes del deploy.
+El perfil de producción usa `spring.jpa.hibernate.ddl-auto=validate` — Hibernate **no** crea ni modifica tablas. Todo cambio de esquema se aplica a mano en Supabase **antes** del merge; si el código llega primero, el backend no arranca en Render.
 
 ### Migraciones aplicadas en Supabase
-
-Los scripts están en `src/main/resources/db/migration/`.
 
 | Script | Descripción | Sprint |
 |---|---|---|
 | Schema inicial | Tablas `usuarios`, `fincas`; ENUMs `rol_usuario`, `municipio_enum`, `tipo_negocio_enum` | Sprint 1 |
 | Tabla `negocios` | Columnas: `nombre_negocio`, `tipo_negocio`, `direccion`, `municipio`, `horario_recepcion`, `notas_acceso`, `usuario_id` | Sprint 1 |
-| `US-04_canales_contacto_usuarios.sql` | Columnas `canal_whatsapp_habilitado` y `canal_llamada_habilitado` en `usuarios` | Sprint 1 |
+| `src/main/resources/db/migration/US-04_canales_contacto_usuarios.sql` | Columnas `canal_whatsapp_habilitado` y `canal_llamada_habilitado` en `usuarios` | Sprint 1 |
+| `sql/sprint2/` y `sql/sprint3/` | `ofertas`, índices del catálogo, `pedidos` y `registros_contacto` (ver [Scripts SQL](#scripts-sql)) | Sprints 2 y 3 |
 
 ---
 
@@ -569,4 +671,4 @@ Los scripts están en `src/main/resources/db/migration/`.
 
 ---
 
-*Sprint 1 completado — autenticación JWT + perfiles sectorizados (US-01, US-02, US-03, US-04, US-05, US-21) — desplegado en Railway*
+*Sprint 3 completado — pedidos, historial de contactos, panel del productor y eliminación de ofertas (US-10, US-14, US-15, US-17, US-18, US-19, US-22, US-23, US-25) — desplegado en Render*

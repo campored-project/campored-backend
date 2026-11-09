@@ -53,9 +53,12 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.everyItem;
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -506,6 +509,21 @@ class PedidoControllerIntegrationTest {
 
         mockMvc.perform(get(URL_PEDIDOS + "/" + pedido.getId()))
                 .andExpect(status().isUnauthorized());
+    }
+
+    // El enum ModalidadLogistica incluye AMBAS; el contrato del pedido debe mostrar solo las dos modalidades válidas
+    @Test
+    @DisplayName("US-18 Regla — Swagger documenta modalidadEntrega del pedido sin AMBAS")
+    void testSwaggerModalidadEntregaSinAmbas() throws Exception {
+        String respuesta = "$.components.schemas.PedidoResponse.properties.modalidadEntrega.enum";
+        String solicitud = "$.components.schemas.CrearPedidoRequest.properties.modalidadEntrega.enum";
+
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(respuesta, containsInAnyOrder("RECOGIDA_FINCA", "DESPACHO_PRODUCTOR")))
+                .andExpect(jsonPath(respuesta, not(hasItem("AMBAS"))))
+                .andExpect(jsonPath(solicitud, containsInAnyOrder("RECOGIDA_FINCA", "DESPACHO_PRODUCTOR")))
+                .andExpect(jsonPath(solicitud, not(hasItem("AMBAS"))));
     }
 
     // ============================================================
