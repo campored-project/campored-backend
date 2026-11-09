@@ -1,24 +1,24 @@
 # Smoke test del Sprint 3 en producción
 
-US-25 Despliegue final (AB#56) · verificación de los Bloques A, B y C ya mergeados en `develop`.
+US-25 Despliegue final (AB#56) · corrida vigente antes del release v1.0.0, con los Bloques A, B y C y los ajustes de fechas (#17) ya mergeados en `develop`.
 
 | Dato | Valor |
 | --- | --- |
-| Fecha de la corrida | 2026-11-05, 20:27–20:29 hora Colombia (2026-11-06 01:27–01:29 UTC) |
+| Fecha de la corrida | 2026-11-08, 21:02–21:05 hora Colombia (2026-11-09 02:02–02:05 UTC) |
 | URL | `https://campored-backend.onrender.com` (Render, plan Free) |
 | Base de datos | Supabase (PostgreSQL, Session Pooler) |
-| Commit de `develop` probado | `41d0cf7` — Merge pull request #16 (incluye #13 y #14) |
-| Sufijo de la corrida | `20261105202741` |
-| Script | `scripts/smoke/smoke-sprint3.ps1` (Windows PowerShell 5.1) |
-| Build local de ese commit | `./mvnw clean verify`: 356 tests, 0 fallos; cobertura JaCoCo 99,01 % de líneas, 94,30 % de ramas |
+| Commit de `develop` probado | `4e63a82` — Merge pull request #17 (sobre #13, #14 y #16) |
+| Sufijo de la corrida | `20261108210257` |
+| Script | `scripts/smoke/smoke-sprint3.ps1` (Windows PowerShell 5.1), ya con el reintento ante 502, 503 o 504; los chequeos son los mismos |
+| Build local | `./mvnw clean verify` de `feat/US-25-cierre-backend` (`4e63a82` más las anotaciones de Swagger y su test): 367 tests, 0 fallos; cobertura JaCoCo 99,01 % de líneas, 95,22 % de ramas |
 
 ## Resultado
 
-**API: 68 de 68 chequeos pasados. CORS: 4 de 4 pasados. Ningún ❌.**
+**API: 73 de 73 chequeos pasados. CORS: 4 de 4 pasados. Ningún ❌ y ningún reintento.**
 
-- El despliegue sirve la versión nueva: `/v3/api-docs` expone `POST /api/pedidos`, `GET /api/pedidos/{id}`, `GET /api/pedidos/recibidos`, `POST /api/contactos`, `GET /api/contactos/mios` y `DELETE /api/ofertas/{id}`. El backend arrancó con `ddl-auto=validate`, así que las tablas `pedidos` y `registros_contacto` existen en Supabase y coinciden con las entidades.
-- No hubo cold start: Render respondió desde la primera petición.
-- La corrida cayó en la franja en que la fecha UTC (06-11) ya no coincide con la de Colombia (05-11). El pedido con fecha 05-11 se aceptó y el de 04-11 respondió `La fecha preferida no puede ser anterior a hoy.`. Eso confirma que en producción las fechas de negocio usan el `Clock` de America/Bogota (`TimeConfig`) y no la fecha UTC del servidor.
+- El despliegue sirve la versión de `develop`: `/v3/api-docs` expone `POST /api/pedidos`, `GET /api/pedidos/{id}`, `GET /api/pedidos/recibidos`, `POST /api/contactos`, `GET /api/contactos/mios` y `DELETE /api/ofertas/{id}`. El backend arrancó con `ddl-auto=validate`, así que el esquema de Supabase coincide con las entidades.
+- Render estaba dormido: el script esperó el arranque (cerca de un minuto y medio) y después ninguna petición respondió 502, 503 ni 504, así que el reintento nuevo no llegó a activarse.
+- Las cinco fechas con hora revisadas llegan con el offset `-05:00` y a menos de 5 s de la hora de Colombia de la petición (ver [Fechas con el offset de Colombia](#fechas-con-el-offset-de-colombia)).
 
 ## Detalle por chequeo
 
@@ -96,13 +96,19 @@ US-25 Despliegue final (AB#56) · verificación de los Bloques A, B y C ya merge
 | US-17 | Esc 2 productor B habilita llamada con teléfono vacío | 400 | 400 | ✅ |
 | US-17 | Esc 3 ambos canales en false | 200 | 200 | ✅ |
 | US-22 | Formato `ErrorResponse` en las 28 respuestas de error (sin 401) | 28 válidas | 28 válidas | ✅ |
+| US-22 | I fechaCreacion del pedido P1 con offset -05:00 y hora de la corrida | 201 | 201 | ✅ |
+| US-22 | I fechaContacto del contacto C1 con offset -05:00 y hora de la corrida | 201 | 201 | ✅ |
+| US-22 | I timestamp de ErrorResponse (400 sin dirección) con offset -05:00 y hora de la corrida | 400 | 400 | ✅ |
+| US-22 | I fechaCreacion de la oferta O1 con offset -05:00 y hora de la corrida | 201 | 201 | ✅ |
+| US-22 | I usuario.fechaRegistro del login del comprador A con offset -05:00 y hora de la corrida | 200 | 200 | ✅ |
 
 Notas:
 
-- La fila US-22 resume la revisión de las 28 respuestas 4xx de la corrida (los 401 aparte): todas traen `timestamp`, `status`, `error`, `mensaje` y `ruta`, el `status` del cuerpo coincide con el HTTP, y `errores` aparece solo en los 400 por campo.
+- La fila US-22 de formato resume la revisión de las 28 respuestas 4xx de la corrida (los 401 aparte): todas traen `timestamp`, `status`, `error`, `mensaje` y `ruta`, el `status` del cuerpo coincide con el HTTP, y `errores` aparece solo en los 400 por campo.
 - Los 401 llegan sin cuerpo, como dice el contrato.
 - `GET /api/ofertas/{id}` de una oferta eliminada responde 404 con `La oferta no existe o no está disponible` (el mensaje del detalle público, US-12). El contrato de US-10 solo exige el 404.
-- US-17 Esc 2 se probó por los dos caminos del backend: WhatsApp sin número guardado (`UsuarioService`) y teléfono vacío en la petición (`CanalesContactoValidator`). Después del 400, el teléfono guardado del productor B sigue intacto.
+- US-17 Esc 2 se prueba por los dos caminos del backend: WhatsApp sin número guardado (`UsuarioService`) y teléfono vacío en la petición (`CanalesContactoValidator`). Después del 400, el teléfono guardado del productor B sigue intacto.
+- Si una petición recibe 502, 503 o 504, el script espera 5 s y la repite una vez; el chequeo evalúa la respuesta del reintento y la fila queda marcada con «⚠ reintento tras <código>» en la consola y en la tabla. En esta corrida no hubo ninguna.
 
 ## CORS
 
@@ -113,31 +119,28 @@ Preflight `OPTIONS` con `Access-Control-Request-Method: POST` y `Access-Control-
 | `https://campored.rollerandres.dev` | ✅ 200 | ✅ 200 |
 | `https://campored-frontend.vercel.app` | ✅ 200 | ✅ 200 |
 
-En los cuatro casos `Access-Control-Allow-Origin` es igual al origen, y `Access-Control-Allow-Headers` incluye `authorization` y `content-type`. El registro de contactos con `keepalive` del frontend puede enviar el preflight sin problema. `CORS_ALLOWED_ORIGINS` en Render ya incluye los dos dominios.
+En los cuatro casos `Access-Control-Allow-Origin` es igual al origen, y `Access-Control-Allow-Headers` incluye `authorization` y `content-type`. `CORS_ALLOWED_ORIGINS` en Render incluye los dos dominios. Si el dominio final del frontend cambia antes del release, hay que agregarlo y repetir este chequeo (ver `docs/RELEASE_v1.0.0.md`).
 
-## Hora de las fechas
+## Fechas con el offset de Colombia
 
-| Campo | Valor recibido | UTC de la petición | Colombia | Coincide con |
-| --- | --- | --- | --- | --- |
-| `fechaCreacion` (pedido P1) | `2026-11-06T01:28:07.616432` | 2026-11-06T01:28:07 | 2026-11-05T20:28:07 | UTC |
-| `fechaContacto` (contacto C1) | `2026-11-06T01:28:22.267774` | 2026-11-06T01:28:21 | 2026-11-05T20:28:21 | UTC |
-| `timestamp` de `ErrorResponse` | `2026-11-06T01:28:30.108422793` | 2026-11-06T01:28:30 | 2026-11-05T20:28:30 | UTC |
+| Campo | Valor recibido | Hora Colombia de la petición |
+| --- | --- | --- |
+| `fechaCreacion` (pedido P1) | `2026-11-08T21:04:37.896802-05:00` | 2026-11-08T21:04:38 |
+| `fechaContacto` (contacto C1) | `2026-11-08T21:04:47.394079-05:00` | 2026-11-08T21:04:48 |
+| `timestamp` de `ErrorResponse` (400 sin dirección) | `2026-11-08T21:04:38.594101897-05:00` | 2026-11-08T21:04:39 |
+| `fechaCreacion` (oferta O1) | `2026-11-08T21:04:35.010904-05:00` | 2026-11-08T21:04:36 |
+| `usuario.fechaRegistro` (login del comprador A) | `2026-11-08T21:04:28.791911-05:00` | 2026-11-08T21:04:33 |
 
-Las tres fechas salen en **hora UTC y sin offset** (`LocalDateTime`). El JVM de Render corre en UTC y `spring.jpa.properties.hibernate.jdbc.time_zone=UTC`.
+Todas traen offset explícito y coinciden con la hora de Colombia de la petición; `fechaRegistro` es unos segundos anterior porque el usuario se registró antes del login. El frontend puede usar `new Date(valor)` sin concatenar `Z`.
 
-**Qué vería el frontend:** `new Date("2026-11-06T01:28:07.616432")` interpreta una cadena sin offset como hora **local del navegador**. Un pedido hecho a las 8:28 p. m. del 5 de noviembre se mostraría como «6 nov, 1:28 a. m.»: cinco horas adelante y, entre las 7 p. m. y la medianoche, con la fecha del día siguiente. Un «hace X minutos» saldría en el futuro. El contrato ya avisa que es hora UTC, pero el formato no lo dice.
+## Antecedentes
 
-**Corrección mínima propuesta para US-25** (no aplicada):
-
-1. En `PedidoResponse` (`fechaCreacion`, `src/main/java/com/campored/backend/dto/PedidoResponse.java:27`) y `ContactoResponse` (`fechaContacto`, `ContactoResponse.java:19`), cambiar `LocalDateTime` por `OffsetDateTime`.
-2. En `PedidoMapper.java:27` y `ContactoMapper.java:26`, convertir con `fecha.atZone(ZoneId.systemDefault()).toOffsetDateTime()`. Así sale `"2026-11-06T01:28:07.616432Z"` en Render, y sigue siendo correcto si se corre local con el JVM en hora Colombia.
-3. Para que todo el API sea coherente, lo mismo en `OfertaResponse.java:44`, `OfertaDetalleResponse.java:37` (`OfertaMapper.java:43`, `:69`, `:92`) y en `ErrorResponse.timestamp` (`ErrorResponse.java:19`, `GlobalExceptionHandler.java:132`, con `OffsetDateTime.now()`).
-
-Las entidades y el esquema no cambian: las columnas siguen siendo `TIMESTAMP` en UTC, y no hace falta script SQL. Hay que actualizar los tests que comparan la fecha y la nota de `docs/API_CONTRATO_SPRINT3.md`. Si se prefiere no tocar el backend, la alternativa en el frontend es parsear con `new Date(valor + "Z")` y formatear con `timeZone: "America/Bogota"`.
+- **Corrida `20261105202741`** (2026-11-05, 20:27–20:29 hora Colombia, commit `41d0cf7` — PR #16 sobre #13 y #14): primera corrida en producción, 68 de 68 chequeos de API y 4 de 4 de CORS. Confirmó que la fecha preferida usa el `Clock` de America/Bogota, pero mostró que `fechaCreacion`, `fechaContacto` y `timestamp` salían en hora UTC sin offset. La corrección se aplicó en el PR #17 (US-22, `FechaRespuesta.aColombia`) y desde entonces el smoke la verifica en la sección I.
+- **Corrida `20261105211742`** (2026-11-05, 21:17 hora Colombia): un 502 pasajero de Render hizo fallar un chequeo que no tenía relación con el código. Es el antecedente del reintento único ante 502, 503 o 504 que ahora hace `Invoke-Api`.
 
 ## Datos creados
 
-Todos los usuarios tienen correo `smoke.<rol>.20261105202741@campored.test`: `productora`, `productorb`, `compradora` y `compradorb`. Las contraseñas se generaron en memoria y no se guardaron. Los teléfonos son ficticios (`3000000001` a `3000000007`).
+Todos los usuarios tienen correo `smoke.<rol>.20261108210257@campored.test`: `productora`, `productorb`, `compradora` y `compradorb`. Las contraseñas se generaron en memoria y no se guardaron. Los teléfonos son ficticios (`3000000001` a `3000000007`).
 
 | Tabla | Filas que quedan de esta corrida |
 | --- | --- |
@@ -147,6 +150,8 @@ Todos los usuarios tienen correo `smoke.<rol>.20261105202741@campored.test`: `pr
 | `ofertas` | 5 (O1, O2, O4, O5, O6; O3 se eliminó en US-10 Esc 1). Todas quedaron AGOTADAS al final, fuera del catálogo público |
 | `pedidos` | 2 (P1 sobre O1 y P2 sobre O2) |
 | `registros_contacto` | 4 (tres sobre O1/O5 y uno sobre O4 agotada) |
+
+Se borran con `scripts/smoke/limpiar_datos_smoke.sql`, que también quita lo que quede de corridas anteriores y no toca los datos demo (`@campored.demo`).
 
 ## Cómo repetirlo
 
