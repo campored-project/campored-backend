@@ -1357,4 +1357,52 @@ class OfertaControllerIntegrationTest {
 
         assertTrue(ofertaRepository.existsById(oferta.getId()));
     }
+
+    // ============================================================
+    // FEATURE: US-24 — Catálogo de productos ampliado (Sprint 3)
+    // Autor: Cristian Diez
+    // Fecha: 2026-11-11
+    // Descripción: Los productos nuevos se publican y filtran como los del catálogo original
+    // ============================================================
+
+    private Oferta publicarOtro(Usuario dueno, String nombre) {
+        Oferta oferta = publicar(dueno, Producto.OTRO, ModalidadLogistica.DESPACHO_PRODUCTOR);
+        oferta.setProductoOtro(nombre);
+        return ofertaRepository.saveAndFlush(oferta);
+    }
+
+    @Test
+    @DisplayName("US-24 — una oferta GULUPA se crea con 201 y aparece en el catálogo filtrado por GULUPA")
+    void testCrearYListarOfertaGulupa() throws Exception {
+        publicar(productor, Producto.MORA_CASTILLA, ModalidadLogistica.AMBAS);
+
+        MvcResult resultado = mockMvc.perform(postJson(requestValido().producto(Producto.GULUPA).build())
+                        .with(autenticadoComo(productor)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.producto").value("GULUPA"))
+                .andExpect(jsonPath("$.productoOtro").doesNotExist())
+                .andReturn();
+        String id = objectMapper.readTree(resultado.getResponse().getContentAsString()).get("id").asText();
+
+        mockMvc.perform(get(URL_OFERTAS).param("producto", "GULUPA"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].id").value(id))
+                .andExpect(jsonPath("$.content[0].producto").value("GULUPA"));
+    }
+
+    @Test
+    @DisplayName("US-24 / US-13 — producto=PANELA incluye la oferta OTRO \"Panela\" y deja fuera las demás")
+    void testCatalogoPanelaIncluyeOtroPanela() throws Exception {
+        Oferta panela = publicar(productor, Producto.PANELA, ModalidadLogistica.AMBAS);
+        Oferta otroPanela = publicarOtro(productor, " Panela ");
+        publicarOtro(productor, "Lulo");
+        publicar(productor, Producto.CACAO, ModalidadLogistica.AMBAS);
+
+        mockMvc.perform(get(URL_OFERTAS).param("producto", "PANELA"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(2)))
+                .andExpect(jsonPath("$.content[*].id", containsInAnyOrder(
+                        panela.getId().toString(), otroPanela.getId().toString())));
+    }
 }

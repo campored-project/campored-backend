@@ -43,7 +43,7 @@ public class CrearOfertaRequest {
     @NotNull(message = "El producto es obligatorio")
     private Producto producto;
 
-    @Schema(example = "Lulo", description = "Solo aplica cuando producto es OTRO")
+    @Schema(example = "Arracacha", description = "Solo aplica cuando producto es OTRO")
     @Size(max = 100, message = "El nombre del producto no puede superar 100 caracteres")
     private String productoOtro;
 

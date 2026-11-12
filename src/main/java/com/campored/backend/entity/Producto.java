@@ -15,6 +15,22 @@ public enum Producto {
     FRIJOL_CARGAMANTO("Fríjol cargamanto"),
     AGUACATE("Aguacate"),
     PLATANO("Plátano"),
+    // US-24 — Catálogo ampliado (Sprint 3): productos que los productores publicaban como OTRO
+    ARVEJA_VERDE("Arveja verde"),
+    CACAO("Cacao en grano seco"),
+    CEBOLLA("Cebolla"),
+    GRANADILLA("Granadilla"),
+    GULUPA("Gulupa"),
+    LIMON_TAHITI("Limón Tahití"),
+    LULO("Lulo"),
+    MARACUYA("Maracuyá"),
+    PANELA("Panela"),
+    PAPA_CAPIRA("Papa capira"),
+    PIMENTON("Pimentón"),
+    PINA("Piña"),
+    TOMATE_ARBOL("Tomate de árbol"),
+    UCHUVA("Uchuva"),
+    YUCA("Yuca"),
     OTRO("Otro");
 
     // ============================================================

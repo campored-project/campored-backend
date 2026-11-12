@@ -2,7 +2,7 @@
 
 US-25 Despliegue final (AB#56). Pasos que quedan después del bloque D1 (rama `feat/US-25-cierre-backend`) y que dependen del frontend. Se marcan en orden; si un paso falla, no se sigue con el siguiente.
 
-> **Esquema:** si en algún momento hay un cambio de esquema, el script de `sql/` se ejecuta en el SQL Editor de Supabase **antes** del merge que trae el código. Producción corre con `ddl-auto=validate`: si el código llega primero, el backend no arranca en Render. Hoy no hay scripts pendientes; los cinco de `db/migration/`, `sql/sprint2/` y `sql/sprint3/` ya están aplicados.
+> **Esquema:** si en algún momento hay un cambio de esquema, el script de `sql/` se ejecuta en el SQL Editor de Supabase **antes** del merge que trae el código. Producción corre con `ddl-auto=validate`: si el código llega primero, el backend no arranca en Render. Hoy no hay scripts pendientes; los seis de `db/migration/`, `sql/sprint2/` y `sql/sprint3/` ya están aplicados, incluido `sql/sprint3/US-24_ampliar_productos.sql` (catálogo de 23 productos).
 
 ## 1. Prerrequisitos
 

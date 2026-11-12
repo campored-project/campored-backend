@@ -30,6 +30,34 @@ Ejemplo: `"fechaCreacion": "2026-11-05T20:28:07.616432-05:00"`. La parte fraccio
 
 ---
 
+## US-24 — Catálogo de productos ampliado (AB#55)
+
+El enum `Producto` pasa de 8 a 23 valores. Los 7 originales y `OTRO` no cambian; los 15 nuevos van antes de `OTRO`. Aplica a `producto` en crear y editar ofertas, al filtro `GET /api/ofertas?producto=`, a `oferta.producto` de los pedidos y al texto `producto` de los contactos.
+
+| Valor | Etiqueta |
+| --- | --- |
+| `ARVEJA_VERDE` | Arveja verde |
+| `CACAO` | Cacao en grano seco |
+| `CEBOLLA` | Cebolla |
+| `GRANADILLA` | Granadilla |
+| `GULUPA` | Gulupa |
+| `LIMON_TAHITI` | Limón Tahití |
+| `LULO` | Lulo |
+| `MARACUYA` | Maracuyá |
+| `PANELA` | Panela |
+| `PAPA_CAPIRA` | Papa capira |
+| `PIMENTON` | Pimentón |
+| `PINA` | Piña |
+| `TOMATE_ARBOL` | Tomate de árbol |
+| `UCHUVA` | Uchuva |
+| `YUCA` | Yuca |
+
+- El filtro por producto sigue la regla de US-13: `producto=PANELA` trae también las ofertas `OTRO` cuyo `productoOtro` es "Panela" (sin distinguir mayúsculas, tildes ni espacios en los extremos). Las ofertas `OTRO` que ya existían no se migran.
+- Un valor fuera del enum responde igual que antes: 400 con `mensaje` `El parámetro 'producto' tiene un valor inválido: '…'. Valores permitidos: …`, que ahora lista los 23 valores.
+- Esquema: `sql/sprint3/US-24_ampliar_productos.sql` amplía el `CHECK` de `ofertas.producto`.
+
+---
+
 ## Bloque A — US-18 Checkout y Pedido (AB#49) + US-10 Eliminar oferta (AB#38)
 
 ### Resumen de endpoints

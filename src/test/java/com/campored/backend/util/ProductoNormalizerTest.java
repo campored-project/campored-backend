@@ -44,6 +44,18 @@ class ProductoNormalizerTest {
         assertEquals("pinguino", ProductoNormalizer.sinTildes("pingüino"));
     }
 
+    @Test
+    @DisplayName("US-24 — los productos nuevos con ñ y tildes se reconocen con y sin ellas")
+    void testCandidatosProductosNuevos() {
+        assertEquals(List.of("piña", "pina"), List.copyOf(ProductoNormalizer.candidatos(Producto.PINA)));
+        assertEquals(List.of("limón tahití", "limon tahiti"),
+                List.copyOf(ProductoNormalizer.candidatos(Producto.LIMON_TAHITI)));
+        assertEquals(List.of("tomate de árbol", "tomate de arbol", "tomate arbol"),
+                List.copyOf(ProductoNormalizer.candidatos(Producto.TOMATE_ARBOL)));
+        assertEquals(List.of("cacao en grano seco", "cacao"),
+                List.copyOf(ProductoNormalizer.candidatos(Producto.CACAO)));
+    }
+
     @ParameterizedTest(name = "{0}")
     @EnumSource(Producto.class)
     @DisplayName("Debe generar candidatos en minúsculas y sin espacios sobrantes para cada producto")

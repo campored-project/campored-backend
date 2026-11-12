@@ -539,6 +539,7 @@ Producción corre con `ddl-auto=validate`: si el esquema no coincide con las ent
 | `sql/sprint2/US-11-13_indices_catalogo_ofertas.sql` | Índices del catálogo | 2 |
 | `sql/sprint3/US-18_crear_tabla_pedidos.sql` | Tabla `pedidos` | 3 |
 | `sql/sprint3/US-19_crear_tabla_registros_contacto.sql` | Tabla `registros_contacto` | 3 |
+| `sql/sprint3/US-24_ampliar_productos.sql` | Amplía el `CHECK` de `ofertas.producto` a los 23 productos del catálogo | 3 |
 
 Todos están aplicados en Supabase. Los de `scripts/` no cambian el esquema: verifican o limpian datos de prueba.
 
